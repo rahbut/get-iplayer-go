@@ -1,0 +1,36 @@
+# Downloaded media files
+*.mp4
+*.ts
+*.m4a
+*.m4v
+*.avi
+*.mkv
+*.flv
+*.mov
+
+# Thumbnails
+*.jpg
+*.png
+*.jpeg
+
+# Temporary files
+*.tmp
+*.temp
+
+# Build artifacts
+get-iplayer-go
+*.exe
+
+# Log files
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local environment config (contains personal registry URL etc.)
+.env
+
+# Downloads directory contents (keep the dir, ignore everything inside)
+downloads/*
+!downloads/.gitkeep

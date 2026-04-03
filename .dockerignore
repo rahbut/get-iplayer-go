@@ -1,0 +1,29 @@
+# Exclude build artifacts
+get-iplayer-go
+*.mp4
+*.ts
+*.m4a
+
+# Exclude downloads
+downloads/
+
+# Exclude git
+.git/
+.gitignore
+
+# Exclude documentation
+*.md
+WEBUI.md
+TAGGING_IMPLEMENTATION.md
+
+# Exclude Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore
+.env.example
+.env
+
+# Exclude temp files
+*.log
+.DS_Store
+ffmpeg_*.log

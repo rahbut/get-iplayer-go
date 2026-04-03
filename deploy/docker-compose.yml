@@ -1,0 +1,9 @@
+services:
+  get-iplayer:
+    image: ${REGISTRY_IMAGE:-get-iplayer-go:latest}
+    container_name: get-iplayer-go
+    ports:
+      - "7373:7373"
+    volumes:
+      - ./downloads:/app/downloads
+    restart: unless-stopped

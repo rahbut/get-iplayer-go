@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>get-iplayer-go</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .animate-slide-in {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .animate-pulse-slow {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        .progress-bar {
+            transition: width 0.3s ease-out;
+        }
+
+        /* Custom scrollbar */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <!-- Header -->
+        <div class="mb-8 text-center">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">get-iplayer-go</h1>
+            <p class="text-gray-600">Download BBC iPlayer programmes in 1080p</p>
+        </div>
+
+        <!-- Main Card -->
+        <div class="bg-white rounded-2xl shadow-xl p-8 mb-8">
+            <!-- Input Section -->
+            <div id="inputSection" class="mb-6">
+                <label for="input" class="block text-sm font-medium text-gray-700 mb-2">
+                    BBC iPlayer URL or PID
+                </label>
+                <div class="flex gap-3">
+                    <input 
+                        type="text" 
+                        id="input" 
+                        placeholder="https://www.bbc.co.uk/iplayer/episode/... or PID"
+                        class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                    />
+                    <button 
+                        id="processBtn"
+                        onclick="processInput()"
+                        class="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-4 focus:ring-blue-200 transition font-medium"
+                    >
+                        Process
+                    </button>
+                </div>
+                <p id="inputError" class="text-red-500 text-sm mt-2 hidden"></p>
+            </div>
+
+            <!-- Loading State -->
+            <div id="loadingState" class="hidden">
+                <div class="flex items-center justify-center py-8">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                    <span class="ml-4 text-gray-600">Processing...</span>
+                </div>
+            </div>
+
+            <!-- Series Section (shown after fetching series) -->
+            <div id="seriesSection" class="hidden animate-slide-in">
+                <div class="border-t pt-6">
+                    <h3 class="text-xl font-semibold text-gray-800 mb-4">Select an Episode</h3>
+                    <div id="episodesList" class="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2 pb-4">
+                        <!-- Episodes will be injected here -->
+                    </div>
+                    <button 
+                        onclick="resetForm()"
+                        class="mt-6 px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-medium"
+                    >
+                        Back
+                    </button>
+                </div>
+            </div>
+
+            <!-- Stream Info Section (shown after processing) -->
+            <div id="streamInfo" class="hidden animate-slide-in">
+                <div class="border-t pt-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Ready to Download</h3>
+                    
+                    <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 mb-4">
+                        <div class="flex gap-4">
+                            <img id="thumbnail" class="w-32 h-18 object-cover rounded-lg" />
+                            <div class="flex-1">
+                                <h4 id="showName" class="font-bold text-lg text-gray-800 mb-1"></h4>
+                                <p id="episodeTitle" class="text-gray-600 mb-2"></p>
+                                <div class="flex gap-4 text-sm text-gray-500">
+                                    <span id="quality" class="font-medium"></span>
+                                    <span>•</span>
+                                    <span id="format"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button 
+                        id="downloadBtn"
+                        onclick="startDownload()"
+                        class="w-full py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 focus:ring-4 focus:ring-green-200 transition font-semibold text-lg shadow-lg"
+                    >
+                        Download Now
+                    </button>
+                </div>
+            </div>
+
+            <!-- Download Progress Section -->
+            <div id="progressSection" class="hidden animate-slide-in">
+                <div class="border-t pt-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold text-gray-800">Downloading</h3>
+                        <button 
+                            id="cancelBtn"
+                            onclick="cancelDownload()"
+                            class="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition text-sm font-medium"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+
+                    <!-- Step Indicator -->
+                    <div class="flex justify-between mb-6">
+                        <div id="step1" class="flex-1 text-center">
+                            <div class="w-10 h-10 mx-auto rounded-full bg-gray-200 flex items-center justify-center font-bold text-gray-500 mb-2">1</div>
+                            <p class="text-xs text-gray-600">Downloading</p>
+                        </div>
+                        <div class="flex-1 border-t-2 border-gray-200 mt-5"></div>
+                        <div id="step2" class="flex-1 text-center">
+                            <div class="w-10 h-10 mx-auto rounded-full bg-gray-200 flex items-center justify-center font-bold text-gray-500 mb-2">2</div>
+                            <p class="text-xs text-gray-600">Validating</p>
+                        </div>
+                        <div class="flex-1 border-t-2 border-gray-200 mt-5"></div>
+                        <div id="step3" class="flex-1 text-center">
+                            <div class="w-10 h-10 mx-auto rounded-full bg-gray-200 flex items-center justify-center font-bold text-gray-500 mb-2">3</div>
+                            <p class="text-xs text-gray-600">Muxing</p>
+                        </div>
+                    </div>
+
+                    <!-- Audio Progress Bar -->
+                    <div class="mb-4">
+                        <div class="flex justify-between text-sm mb-2">
+                            <span class="font-medium text-gray-700">Audio</span>
+                            <span id="audioProgress" class="text-gray-600">0%</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                            <div id="audioBar" class="progress-bar h-full bg-gradient-to-r from-purple-500 to-purple-600 rounded-full" style="width: 0%"></div>
+                        </div>
+                        <p id="audioSegments" class="text-xs text-gray-500 mt-1">0/0 segments</p>
+                    </div>
+
+                    <!-- Video Progress Bar -->
+                    <div class="mb-6">
+                        <div class="flex justify-between text-sm mb-2">
+                            <span class="font-medium text-gray-700">Video</span>
+                            <span id="videoProgress" class="text-gray-600">0%</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                            <div id="videoBar" class="progress-bar h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full" style="width: 0%"></div>
+                        </div>
+                        <p id="videoSegments" class="text-xs text-gray-500 mt-1">0/0 segments</p>
+                    </div>
+
+                    <!-- Status Messages -->
+                    <div class="bg-gray-50 rounded-lg p-4 custom-scrollbar max-h-32 overflow-y-auto">
+                        <div id="statusMessages" class="text-sm text-gray-600 font-mono space-y-1">
+                            <p>Initializing...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Complete Section -->
+            <div id="completeSection" class="hidden animate-slide-in">
+                <div class="border-t pt-6">
+                    <div class="text-center py-8">
+                        <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                        </div>
+                        <h3 class="text-2xl font-bold text-gray-800 mb-2">Download Complete!</h3>
+                        <p id="completeFilename" class="text-gray-600 mb-6"></p>
+                        <button 
+                            onclick="resetForm()"
+                            class="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+                        >
+                            Download Another
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error Section -->
+            <div id="errorSection" class="hidden animate-slide-in">
+                <div class="border-t pt-6">
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-6">
+                        <div class="flex gap-3">
+                            <svg class="w-6 h-6 text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <div class="flex-1">
+                                <h4 class="font-semibold text-red-800 mb-1">Download Failed</h4>
+                                <p id="errorMessage" class="text-red-700 text-sm"></p>
+                            </div>
+                        </div>
+                        <button 
+                            onclick="resetForm()"
+                            class="mt-4 px-6 py-2 bg-white border border-red-300 text-red-700 rounded-lg hover:bg-red-50 transition font-medium"
+                        >
+                            Try Again
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- App Version Footer -->
+        <div class="text-center text-xs text-gray-400 mt-8 mb-4">
+            Version: {{.Version}} | Build Time: {{.BuildTime}}
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let currentPID = null;
+        let currentStreamData = null;
+
+        // Connect WebSocket
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+            };
+
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                handleProgressMessage(msg);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket closed, reconnecting...');
+                setTimeout(connectWebSocket, 1000);
+            };
+        }
+
+        // Process input (PID or URL)
+        async function processInput() {
+            const input = document.getElementById('input').value.trim();
+            if (!input) {
+                showError('Please enter a PID or URL');
+                return;
+            }
+
+            hideError();
+            showLoading();
+
+            try {
+                const formData = new FormData();
+                formData.append('input', input);
+
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    showError(data.error);
+                    hideLoading();
+                    return;
+                }
+
+                if (data.is_series) {
+                    renderSeries(data.series_episodes);
+                    return;
+                }
+
+                // Store stream data
+                currentPID = data.pid;
+                currentStreamData = {
+                    pid: data.pid,
+                    url: data.url,
+                    audioUrl: data.audio_url || '',
+                    quality: data.quality || '',
+                    format: data.format || '',
+                    bitrate: data.bitrate || 0,
+                    showName: data.show_name || '',
+                    episodeTitle: data.episode_title || '',
+                    thumbnail: data.thumbnail || ''
+                };
+
+                showStreamInfo();
+            } catch (error) {
+                showError(`Error: ${error.message}`);
+            }
+
+            hideLoading();
+        }
+
+        async function processEpisode(pid) {
+            document.getElementById('seriesSection').classList.add('hidden');
+            showLoading();
+            
+            try {
+                const formData = new FormData();
+                formData.append('input', pid);
+
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    showError(data.error);
+                    hideLoading();
+                    return;
+                }
+
+                currentPID = data.pid;
+                currentStreamData = {
+                    pid: data.pid,
+                    url: data.url,
+                    audioUrl: data.audio_url || '',
+                    quality: data.quality || '',
+                    format: data.format || '',
+                    bitrate: data.bitrate || 0,
+                    showName: data.show_name || '',
+                    episodeTitle: data.episode_title || '',
+                    thumbnail: data.thumbnail || ''
+                };
+
+                showStreamInfo();
+            } catch (error) {
+                showError(`Error: ${error.message}`);
+            }
+
+            hideLoading();
+        }
+
+        function renderSeries(episodes) {
+            hideLoading();
+            document.getElementById('inputSection').classList.add('hidden');
+            document.getElementById('seriesSection').classList.remove('hidden');
+            
+            const list = document.getElementById('episodesList');
+            list.innerHTML = '';
+            
+            episodes.forEach(ep => {
+                const div = document.createElement('div');
+                div.className = 'bg-white border rounded-xl p-4 flex flex-col sm:flex-row gap-4 hover:shadow-md transition';
+                
+                const imgUrl = ep.image_url || 'https://via.placeholder.com/640x360?text=No+Image';
+                
+                div.innerHTML = `
+                    <img src="${imgUrl}" class="w-full sm:w-40 sm:h-24 object-cover rounded-lg flex-shrink-0" alt="Thumbnail" />
+                    <div class="flex-1 min-w-0">
+                        <h4 class="font-bold text-gray-800 truncate">${ep.title || 'Unknown Title'}</h4>
+                        <p class="text-sm font-medium text-blue-600 truncate mb-1">${ep.subtitle || 'Unknown Subtitle'}</p>
+                        <p class="text-sm text-gray-500 line-clamp-2">${ep.synopsis || ''}</p>
+                    </div>
+                    <div class="flex items-center justify-end sm:justify-center mt-2 sm:mt-0">
+                        <button onclick="processEpisode('${ep.id}')" class="px-5 py-2.5 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition font-semibold whitespace-nowrap shadow-sm">
+                            Select
+                        </button>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        // Start download
+        async function startDownload() {
+            if (!currentStreamData) return;
+
+            try {
+                const formData = new FormData();
+                formData.append('pid', currentStreamData.pid);
+                formData.append('url', currentStreamData.url);
+                formData.append('audio_url', currentStreamData.audioUrl);
+                formData.append('quality', currentStreamData.quality);
+
+                const response = await fetch('/download', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    showProgress();
+                } else {
+                    const error = await response.text();
+                    showError(error);
+                }
+            } catch (error) {
+                showError(`Failed to start download: ${error.message}`);
+            }
+        }
+
+        // Cancel download
+        async function cancelDownload() {
+            if (!currentPID) return;
+
+            if (confirm('Are you sure you want to cancel this download?')) {
+                try {
+                    const formData = new FormData();
+                    formData.append('pid', currentPID);
+
+                    await fetch('/cancel', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    addStatusMessage('Cancelling download...');
+                } catch (error) {
+                    console.error('Failed to cancel:', error);
+                }
+            }
+        }
+
+        // Handle WebSocket progress messages
+        function handleProgressMessage(msg) {
+            console.log('Progress message:', msg);
+
+            if (msg.type === 'started') {
+                updateMetadata(msg);
+            } else if (msg.type === 'audio') {
+                updateAudioProgress(msg.percent, msg.current_count, msg.total_count);
+            } else if (msg.type === 'video') {
+                updateVideoProgress(msg.percent, msg.current_count, msg.total_count);
+            } else if (msg.type === 'step') {
+                updateStep(msg.step, msg.step_name);
+                addStatusMessage(msg.message);
+            } else if (msg.type === 'status') {
+                addStatusMessage(msg.message);
+            } else if (msg.type === 'complete') {
+                showComplete(msg.filename);
+            } else if (msg.type === 'error') {
+                showError(msg.message);
+            } else if (msg.type === 'cancelled') {
+                showError('Download cancelled');
+            }
+        }
+
+        // Update metadata display
+        function updateMetadata(msg) {
+            if (msg.thumbnail) {
+                document.getElementById('thumbnail').src = msg.thumbnail;
+            }
+            if (msg.show_name) {
+                document.getElementById('showName').textContent = msg.show_name;
+            }
+            if (msg.episode_title) {
+                document.getElementById('episodeTitle').textContent = msg.episode_title;
+            }
+            if (msg.quality) {
+                document.getElementById('quality').textContent = msg.quality;
+            }
+        }
+
+        // Update progress bars
+        function updateAudioProgress(percent, current, total) {
+            document.getElementById('audioBar').style.width = `${percent}%`;
+            document.getElementById('audioProgress').textContent = `${percent.toFixed(1)}%`;
+            document.getElementById('audioSegments').textContent = `${current}/${total} segments`;
+        }
+
+        function updateVideoProgress(percent, current, total) {
+            document.getElementById('videoBar').style.width = `${percent}%`;
+            document.getElementById('videoProgress').textContent = `${percent.toFixed(1)}%`;
+            document.getElementById('videoSegments').textContent = `${current}/${total} segments`;
+        }
+
+        // Update step indicator
+        function updateStep(step, name) {
+            for (let i = 1; i <= 3; i++) {
+                const stepEl = document.getElementById(`step${i}`);
+                const circle = stepEl.querySelector('div');
+                
+                if (i < step) {
+                    circle.className = 'w-10 h-10 mx-auto rounded-full bg-green-500 flex items-center justify-center font-bold text-white mb-2';
+                    circle.innerHTML = '✓';
+                } else if (i === step) {
+                    circle.className = 'w-10 h-10 mx-auto rounded-full bg-blue-500 flex items-center justify-center font-bold text-white mb-2 animate-pulse-slow';
+                    circle.textContent = i;
+                } else {
+                    circle.className = 'w-10 h-10 mx-auto rounded-full bg-gray-200 flex items-center justify-center font-bold text-gray-500 mb-2';
+                    circle.textContent = i;
+                }
+            }
+
+            document.getElementById('cancelBtn').style.display = step === 1 ? 'block' : 'none';
+        }
+
+        // Add status message
+        function addStatusMessage(message) {
+            const container = document.getElementById('statusMessages');
+            const p = document.createElement('p');
+            p.textContent = message;
+            container.appendChild(p);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // UI state management
+        function showLoading() {
+            document.getElementById('inputSection').classList.add('hidden');
+            document.getElementById('loadingState').classList.remove('hidden');
+            document.getElementById('streamInfo').classList.add('hidden');
+            document.getElementById('seriesSection').classList.add('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingState').classList.add('hidden');
+        }
+
+        function showStreamInfo() {
+            document.getElementById('inputSection').classList.add('hidden');
+            document.getElementById('seriesSection').classList.add('hidden');
+            document.getElementById('streamInfo').classList.remove('hidden');
+            document.getElementById('progressSection').classList.add('hidden');
+            document.getElementById('completeSection').classList.add('hidden');
+            document.getElementById('errorSection').classList.add('hidden');
+            
+            if (currentStreamData) {
+                // Update thumbnail if available
+                const thumbnailEl = document.getElementById('thumbnail');
+                if (currentStreamData.thumbnail) {
+                    thumbnailEl.src = currentStreamData.thumbnail;
+                    thumbnailEl.classList.remove('hidden');
+                } else {
+                    thumbnailEl.classList.add('hidden');
+                }
+                
+                // Update metadata
+                document.getElementById('showName').textContent = currentStreamData.showName || 'Unknown Show';
+                document.getElementById('episodeTitle').textContent = currentStreamData.episodeTitle || 'Episode';
+                document.getElementById('quality').textContent = currentStreamData.quality || 'Unknown quality';
+                document.getElementById('format').textContent = currentStreamData.format || 'Unknown format';
+            }
+        }
+
+        function showProgress() {
+            document.getElementById('inputSection').classList.add('hidden');
+            document.getElementById('seriesSection').classList.add('hidden');
+            document.getElementById('streamInfo').classList.add('hidden');
+            document.getElementById('progressSection').classList.remove('hidden');
+            document.getElementById('completeSection').classList.add('hidden');
+            document.getElementById('errorSection').classList.add('hidden');
+            
+            // Reset progress
+            updateStep(1, 'Downloading');
+            updateAudioProgress(0, 0, 0);
+            updateVideoProgress(0, 0, 0);
+            document.getElementById('statusMessages').innerHTML = '<p>Downloading...</p>';
+        }
+
+        function showComplete(filename) {
+            document.getElementById('progressSection').classList.add('hidden');
+            document.getElementById('completeSection').classList.remove('hidden');
+            document.getElementById('completeFilename').textContent = filename;
+        }
+
+        function showError(message) {
+            document.getElementById('inputSection').classList.remove('hidden');
+            document.getElementById('inputError').textContent = message;
+            document.getElementById('inputError').classList.remove('hidden');
+            document.getElementById('errorSection').classList.remove('hidden');
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('streamInfo').classList.add('hidden');
+            document.getElementById('progressSection').classList.add('hidden');
+        }
+
+        function hideError() {
+            document.getElementById('inputError').classList.add('hidden');
+            document.getElementById('errorSection').classList.add('hidden');
+        }
+
+        function resetForm() {
+            document.getElementById('input').value = '';
+            currentPID = null;
+            currentStreamData = null;
+            document.getElementById('inputSection').classList.remove('hidden');
+            document.getElementById('seriesSection').classList.add('hidden');
+            document.getElementById('streamInfo').classList.add('hidden');
+            document.getElementById('progressSection').classList.add('hidden');
+            document.getElementById('completeSection').classList.add('hidden');
+            document.getElementById('errorSection').classList.add('hidden');
+            hideError();
+        }
+
+        // Allow Enter key to submit
+        document.getElementById('input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                processInput();
+            }
+        });
+
+        // Initialize WebSocket connection
+        connectWebSocket();
+    </script>
+</body>
+</html>
