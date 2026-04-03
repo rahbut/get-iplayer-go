@@ -26,6 +26,16 @@ go build -o get-iplayer-go ./cmd/get-iplayer-go/
 
 ### Docker
 
+Pull and run the pre-built image from the GitHub Container Registry:
+
+```bash
+docker run -p 7373:7373 -v ./downloads:/app/downloads ghcr.io/rahbut/get-iplayer-go:latest
+```
+
+Then open `http://localhost:7373` in your browser.
+
+To build from source instead:
+
 ```bash
 docker build -f deploy/Dockerfile -t get-iplayer-go .
 ```
@@ -79,7 +89,15 @@ Opens a web interface at `http://localhost:7373` with real-time WebSocket progre
 
 ### Docker
 
-See [DEPLOY.md](DEPLOY.md) for full Docker and server deployment instructions.
+```bash
+# Pull and run the web UI
+docker run -p 7373:7373 -v ./downloads:/app/downloads ghcr.io/rahbut/get-iplayer-go:latest
+
+# Or use the provided Compose file (pulls from GHCR by default)
+docker compose -f deploy/docker-compose.yml up -d
+```
+
+See [DEPLOY.md](DEPLOY.md) for full server deployment instructions, including how to set up a persistent stack with automatic restarts.
 
 ## Performance
 

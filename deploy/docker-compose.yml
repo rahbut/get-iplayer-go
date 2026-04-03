@@ -1,6 +1,6 @@
 services:
   get-iplayer:
-    image: ${REGISTRY_IMAGE:-get-iplayer-go:latest}
+    image: ${REGISTRY_IMAGE:-ghcr.io/rahbut/get-iplayer-go:latest}
     container_name: get-iplayer-go
     ports:
       - "7373:7373"

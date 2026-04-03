@@ -4,19 +4,24 @@ This guide covers deploying get-iplayer-go to a remote server using Docker.
 
 ## Overview
 
-The recommended workflow is:
+Images are published automatically to the GitHub Container Registry on every push to `main`:
 
-1. Build the Docker image locally
-2. Push it to a container registry
-3. Pull and run it on the server via Docker Compose
+```
+ghcr.io/rahbut/get-iplayer-go:latest
+```
 
-The `deploy/deploy.sh` script handles steps 1 and 2. Step 3 is a one-time server setup.
+The recommended deployment workflow is:
+
+1. Pull the image from GHCR on your server via Docker Compose
+2. (Optional) If you need a custom build, use `deploy/deploy.sh` to build and push to your own registry
 
 ---
 
 ## Local configuration
 
-Create a `.env` file in the repo root (it is gitignored, so safe for personal config):
+By default, `deploy/docker-compose.yml` pulls from `ghcr.io/rahbut/get-iplayer-go:latest` with no extra configuration needed.
+
+To override with your own registry, create a `.env` file in the stack directory (it is gitignored, so safe for personal config):
 
 ```bash
 REGISTRY_IMAGE=your-registry.example.com/youruser/get-iplayer-go:latest
@@ -47,8 +52,8 @@ ssh user@server 'mkdir -p /opt/stacks/get-iplayer-go/downloads'
 # Copy the Compose file
 scp deploy/docker-compose.yml user@server:/opt/stacks/get-iplayer-go/
 
-# Create the .env so Compose knows which registry image to pull
-ssh user@server 'echo "REGISTRY_IMAGE=your-registry.example.com/youruser/get-iplayer-go:latest" > /opt/stacks/get-iplayer-go/.env'
+# Optional: create a .env to override the default GHCR image
+ssh user@server 'echo "REGISTRY_IMAGE=ghcr.io/rahbut/get-iplayer-go:latest" > /opt/stacks/get-iplayer-go/.env'
 ```
 
 Then on the server:
