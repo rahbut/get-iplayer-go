@@ -8,6 +8,7 @@ A high-performance Go rewrite of [get_iplayer](https://github.com/get-iplayer/ge
 - **Automatic 1080p enhancement** — injects a true 1080p representation into streams where BBC only advertises up to 720p, with fallback if unavailable
 - **Full metadata tagging** — embeds title, show, series/episode numbers, channel, genre, synopsis, broadcast date, and thumbnail artwork into the MP4
 - **Human-readable filenames** — e.g. `Show.Name.S01E01.mp4`, falling back to PID if metadata is incomplete
+- **Season/series downloads** — paste a BBC iPlayer series URL to browse all episodes; select one, several, or the entire season; streams are pre-checked concurrently before any download begins
 - **Web UI** — modern single-page interface with real-time progress, cancel support, and mobile-responsive design
 - **Single binary** — no runtime dependencies beyond `ffmpeg`
 
@@ -85,7 +86,15 @@ All done!
 ./get-iplayer-go web
 ```
 
-Opens a web interface at `http://localhost:7373` with real-time WebSocket progress updates, the ability to queue and cancel downloads, and step-by-step status for each.
+Opens a web interface at `http://localhost:7373` with:
+
+- **Single episode** — paste a PID or episode URL, confirm the stream details, and download
+- **Full season** — paste a series URL (`.../iplayer/episodes/...`) to get a browsable episode list with thumbnails and synopses
+  - Tick any combination of episodes, or use **Select All**
+  - Streams are resolved concurrently up front — unavailable episodes are flagged before anything downloads
+  - Episodes download sequentially with an overall queue progress bar alongside the per-episode audio/video bars
+  - A summary card at the end lists every episode with its filename and file size, or the reason it failed
+- Real-time WebSocket progress, cancel support, and step-by-step status throughout
 
 ### Docker
 
@@ -116,6 +125,7 @@ A typical one-hour BBC programme downloads in around 30–45 seconds on a good c
 | Series numbers | May be incorrect | **Parsed from display titles** |
 | Output | Verbose | **Clean and minimal** |
 | Web UI | No | **Yes** |
+| Series downloads | No | **Yes — multi-select with preflight checks** |
 
 ## Troubleshooting
 

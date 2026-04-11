@@ -20,21 +20,22 @@ var upgrader = websocket.Upgrader{
 
 // ProgressMessage represents a progress update sent to the client
 type ProgressMessage struct {
-	Type         string  `json:"type"`                    // "audio", "video", "status", "error", "complete", "step"
-	Message      string  `json:"message"`                 // Human-readable message
-	Percent      float64 `json:"percent"`                 // Progress percentage (0-100)
-	CurrentCount int     `json:"current_count"`           // Current segment/frame count
-	TotalCount   int     `json:"total_count"`             // Total segments/frames
-	Step         int     `json:"step"`                    // Current step (1-3)
-	TotalSteps   int     `json:"total_steps"`             // Total steps (usually 3)
-	StepName     string  `json:"step_name"`               // Step name ("Downloading", "Validating", "Muxing")
-	PID          string  `json:"pid"`                     // Programme ID
-	Filename     string  `json:"filename"`                // Output filename
-	CanCancel    bool    `json:"can_cancel"`              // Whether download can be cancelled
-	Thumbnail    string  `json:"thumbnail,omitempty"`     // Base64 thumbnail data
-	ShowName     string  `json:"show_name,omitempty"`     // Show name from metadata
-	EpisodeTitle string  `json:"episode_title,omitempty"` // Episode title
-	Quality      string  `json:"quality,omitempty"`       // Video quality (e.g., "1920x1080")
+	Type          string  `json:"type"`                      // "audio", "video", "status", "error", "complete", "step"
+	Message       string  `json:"message"`                   // Human-readable message
+	Percent       float64 `json:"percent"`                   // Progress percentage (0-100)
+	CurrentCount  int     `json:"current_count"`             // Current segment/frame count
+	TotalCount    int     `json:"total_count"`               // Total segments/frames
+	Step          int     `json:"step"`                      // Current step (1-3)
+	TotalSteps    int     `json:"total_steps"`               // Total steps (usually 3)
+	StepName      string  `json:"step_name"`                 // Step name ("Downloading", "Validating", "Muxing")
+	PID           string  `json:"pid"`                       // Programme ID
+	Filename      string  `json:"filename"`                  // Output filename
+	CanCancel     bool    `json:"can_cancel"`                // Whether download can be cancelled
+	Thumbnail     string  `json:"thumbnail,omitempty"`       // Base64 thumbnail data
+	ShowName      string  `json:"show_name,omitempty"`       // Show name from metadata
+	EpisodeTitle  string  `json:"episode_title,omitempty"`   // Episode title
+	Quality       string  `json:"quality,omitempty"`         // Video quality (e.g., "1920x1080")
+	FileSizeBytes int64   `json:"file_size_bytes,omitempty"` // Final output file size in bytes
 }
 
 // WebSocketHub manages all active WebSocket connections

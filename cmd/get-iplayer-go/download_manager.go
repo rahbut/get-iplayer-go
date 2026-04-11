@@ -120,12 +120,17 @@ func (dm *DownloadManager) StartDownload(pid, videoURL, audioURL string, metadat
 			return
 		}
 
-		// Success!
+		// Success! Stat the output file so we can report its size.
+		var fileSizeBytes int64
+		if info, err := os.Stat(fullPath); err == nil {
+			fileSizeBytes = info.Size()
+		}
 		BroadcastProgress(ProgressMessage{
-			Type:     "complete",
-			Message:  "Download complete!",
-			PID:      pid,
-			Filename: filename,
+			Type:          "complete",
+			Message:       "Download complete!",
+			PID:           pid,
+			Filename:      fullPath,
+			FileSizeBytes: fileSizeBytes,
 		})
 	}()
 
@@ -188,13 +193,13 @@ func (dm *DownloadManager) downloadWithProgress(ctx context.Context, pid, videoU
 	// Download audio
 	go func() {
 		err := dm.downloadAudioWithContext(ctx, audioURL, videoURL, audioFilename, baseConcurrency, audioProgressFunc, videoToAudio)
-		
+
 		// Audio finished; send signal to Video to absorb our token capacity
 		select {
 		case audioToVideo <- baseConcurrency:
 		default:
 		}
-		
+
 		if err != nil && ctx.Err() == nil {
 			os.Remove(audioFilename)
 		}
@@ -204,13 +209,13 @@ func (dm *DownloadManager) downloadWithProgress(ctx context.Context, pid, videoU
 	// Download video
 	go func() {
 		err := dm.downloadVideoWithContext(ctx, videoURL, tsFilename, baseConcurrency, videoProgressFunc, audioToVideo)
-		
+
 		// Video finished; send signal to Audio to absorb our token capacity
 		select {
 		case videoToAudio <- baseConcurrency:
 		default:
 		}
-		
+
 		if err != nil && ctx.Err() == nil {
 			os.Remove(tsFilename)
 		}

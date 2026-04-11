@@ -52,6 +52,54 @@
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
             background: #555;
         }
+
+        .episode-card {
+            cursor: pointer;
+            transition: box-shadow 0.15s ease, opacity 0.2s ease;
+        }
+
+        .episode-card:hover:not(.episode-unavailable) {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .episode-card.episode-selected {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+
+        .episode-card.episode-unavailable {
+            opacity: 0.55;
+            cursor: default;
+        }
+
+        /* Confirmation modal */
+        #confirmModal {
+            transition: opacity 0.2s ease;
+        }
+
+        #confirmModal.modal-visible {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        #confirmModal.modal-hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #confirmModalBox {
+            transition: transform 0.2s ease, opacity 0.2s ease;
+        }
+
+        #confirmModal.modal-visible #confirmModalBox {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        #confirmModal.modal-hidden #confirmModalBox {
+            transform: translateY(-12px);
+            opacity: 0;
+        }
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
@@ -97,23 +145,47 @@
 
             <!-- Series Section (shown after fetching series) -->
             <div id="seriesSection" class="hidden animate-slide-in">
-                <div class="border-t pt-6">
-                    <h3 class="text-xl font-semibold text-gray-800 mb-4">Select an Episode</h3>
-                    <div id="episodesList" class="space-y-4 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2 pb-4">
-                        <!-- Episodes will be injected here -->
+                <div>
+                    <!-- Series header row -->
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-semibold text-gray-800">Select Episodes</h3>
+                        <button
+                            id="selectAllBtn"
+                            onclick="toggleSelectAll()"
+                            class="px-4 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition font-medium"
+                        >
+                            Select All
+                        </button>
                     </div>
-                    <button 
-                        onclick="resetForm()"
-                        class="mt-6 px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-medium"
-                    >
-                        Back
-                    </button>
+
+                    <!-- Episode list -->
+                    <div id="episodesList" class="space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2 pb-4">
+                        <!-- Episodes injected here -->
+                    </div>
+
+                    <!-- Action bar -->
+                    <div class="flex items-center justify-between mt-6">
+                        <button
+                            onclick="resetForm()"
+                            class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-medium"
+                        >
+                            Back
+                        </button>
+                        <button
+                            id="downloadSelectedBtn"
+                            onclick="startQueueDownload()"
+                            disabled
+                            class="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            Download Selected (0)
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <!-- Stream Info Section (shown after processing) -->
+            <!-- Stream Info Section (shown after processing a single episode directly) -->
             <div id="streamInfo" class="hidden animate-slide-in">
-                <div class="border-t pt-6">
+                <div>
                     <h3 class="text-lg font-semibold text-gray-800 mb-4">Ready to Download</h3>
                     
                     <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 mb-4">
@@ -143,7 +215,7 @@
 
             <!-- Download Progress Section -->
             <div id="progressSection" class="hidden animate-slide-in">
-                <div class="border-t pt-6">
+                <div>
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-lg font-semibold text-gray-800">Downloading</h3>
                         <button 
@@ -153,6 +225,19 @@
                         >
                             Cancel
                         </button>
+                    </div>
+
+                    <!-- Overall queue progress (hidden for single-episode downloads) -->
+                    <div id="queueProgressSection" class="hidden mb-5 bg-gray-50 rounded-xl p-4">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-sm font-semibold text-gray-700" id="queueProgressLabel">Episode 1 of 1</span>
+                            <span class="text-sm text-gray-500" id="queueProgressCount"></span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                            <div id="queueProgressBar" class="progress-bar h-full bg-gradient-to-r from-indigo-400 to-indigo-500 rounded-full" style="width: 0%"></div>
+                        </div>
+                        <!-- Current episode info -->
+                        <p id="queueCurrentEpisode" class="text-sm text-gray-600 mt-2 truncate"></p>
                     </div>
 
                     <!-- Step Indicator -->
@@ -206,30 +291,34 @@
                 </div>
             </div>
 
-            <!-- Complete Section -->
-            <div id="completeSection" class="hidden animate-slide-in">
-                <div class="border-t pt-6">
-                    <div class="text-center py-8">
-                        <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <!-- Summary Section (single or multi-episode complete) -->
+            <div id="summarySection" class="hidden animate-slide-in">
+                <div>
+                    <div class="flex items-center gap-3 mb-6">
+                        <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                            <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                             </svg>
                         </div>
-                        <h3 class="text-2xl font-bold text-gray-800 mb-2">Download Complete!</h3>
-                        <p id="completeFilename" class="text-gray-600 mb-6"></p>
-                        <button 
-                            onclick="resetForm()"
-                            class="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
-                        >
-                            Download Another
-                        </button>
+                        <h3 id="summaryTitle" class="text-xl font-bold text-gray-800">Download Complete!</h3>
                     </div>
+
+                    <div id="summaryList" class="space-y-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1 mb-6">
+                        <!-- Result rows injected here -->
+                    </div>
+
+                    <button
+                        onclick="resetForm()"
+                        class="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+                    >
+                        Download Another
+                    </button>
                 </div>
             </div>
 
             <!-- Error Section -->
             <div id="errorSection" class="hidden animate-slide-in">
-                <div class="border-t pt-6">
+                <div>
                     <div class="bg-red-50 border border-red-200 rounded-lg p-6">
                         <div class="flex gap-3">
                             <svg class="w-6 h-6 text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -257,28 +346,64 @@
         </div>
     </div>
 
+    <!-- Confirmation Modal (shared) -->
+    <div id="confirmModal" class="modal-hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+         style="background: rgba(0,0,0,0.45);">
+        <div id="confirmModalBox" class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div class="flex items-start gap-4 mb-5">
+                <div id="confirmModalIcon" class="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center">
+                    <!-- Icon injected by showConfirm() -->
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h3 id="confirmModalTitle" class="text-lg font-bold text-gray-800 mb-1"></h3>
+                    <p id="confirmModalBody" class="text-sm text-gray-600 leading-relaxed"></p>
+                </div>
+            </div>
+            <div class="flex gap-3 justify-end">
+                <button id="confirmModalCancel"
+                    class="px-5 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition font-medium text-sm">
+                    Cancel
+                </button>
+                <button id="confirmModalOk"
+                    class="px-5 py-2 rounded-lg text-white font-medium text-sm transition">
+                    Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        // ---------------------------------------------------------------------------
+        // State
+        // ---------------------------------------------------------------------------
         let ws = null;
         let currentPID = null;
         let currentStreamData = null;
 
-        // Connect WebSocket
+        // Series / queue state
+        let seriesEpisodes    = [];       // full episode list from server [{id, title, subtitle, synopsis, image_url}]
+        let selectedEpisodes  = {};       // pid -> episode metadata (checked episodes)
+        let resolvedStreams    = {};       // pid -> resolved stream data OR {error: "msg"}
+        let episodeQueue      = [];       // [{pid, showName, episodeTitle, ...stream data}] — built after preflight
+        let queueResults      = [];       // [{pid, showName, episodeTitle, filename, status, error}]
+        let queueIndex        = 0;
+        let isQueueMode       = false;    // false = single direct-PID download
+
+        // ---------------------------------------------------------------------------
+        // WebSocket
+        // ---------------------------------------------------------------------------
         function connectWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
-            
-            ws.onopen = () => {
-                console.log('WebSocket connected');
-            };
+
+            ws.onopen = () => { console.log('WebSocket connected'); };
 
             ws.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
                 handleProgressMessage(msg);
             };
 
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-            };
+            ws.onerror = (error) => { console.error('WebSocket error:', error); };
 
             ws.onclose = () => {
                 console.log('WebSocket closed, reconnecting...');
@@ -286,7 +411,9 @@
             };
         }
 
-        // Process input (PID or URL)
+        // ---------------------------------------------------------------------------
+        // Process a raw PID or episode URL (non-series path)
+        // ---------------------------------------------------------------------------
         async function processInput() {
             const input = document.getElementById('input').value.trim();
             if (!input) {
@@ -301,13 +428,9 @@
                 const formData = new FormData();
                 formData.append('input', input);
 
-                const response = await fetch('/process', {
-                    method: 'POST',
-                    body: formData
-                });
-
+                const response = await fetch('/process', { method: 'POST', body: formData });
                 const data = await response.json();
-                
+
                 if (data.error) {
                     showError(data.error);
                     hideLoading();
@@ -315,22 +438,24 @@
                 }
 
                 if (data.is_series) {
-                    renderSeries(data.series_episodes);
+                    seriesEpisodes = data.series_episodes;
+                    renderSeries(seriesEpisodes);
                     return;
                 }
 
-                // Store stream data
+                // Single episode — show confirmation card
+                isQueueMode = false;
                 currentPID = data.pid;
                 currentStreamData = {
-                    pid: data.pid,
-                    url: data.url,
-                    audioUrl: data.audio_url || '',
-                    quality: data.quality || '',
-                    format: data.format || '',
-                    bitrate: data.bitrate || 0,
-                    showName: data.show_name || '',
+                    pid:          data.pid,
+                    url:          data.url,
+                    audioUrl:     data.audio_url   || '',
+                    quality:      data.quality      || '',
+                    format:       data.format       || '',
+                    bitrate:      data.bitrate       || 0,
+                    showName:     data.show_name    || '',
                     episodeTitle: data.episode_title || '',
-                    thumbnail: data.thumbnail || ''
+                    thumbnail:    data.thumbnail    || ''
                 };
 
                 showStreamInfo();
@@ -341,94 +466,368 @@
             hideLoading();
         }
 
-        async function processEpisode(pid) {
-            document.getElementById('seriesSection').classList.add('hidden');
-            showLoading();
-            
-            try {
-                const formData = new FormData();
-                formData.append('input', pid);
-
-                const response = await fetch('/process', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const data = await response.json();
-                
-                if (data.error) {
-                    showError(data.error);
-                    hideLoading();
-                    return;
-                }
-
-                currentPID = data.pid;
-                currentStreamData = {
-                    pid: data.pid,
-                    url: data.url,
-                    audioUrl: data.audio_url || '',
-                    quality: data.quality || '',
-                    format: data.format || '',
-                    bitrate: data.bitrate || 0,
-                    showName: data.show_name || '',
-                    episodeTitle: data.episode_title || '',
-                    thumbnail: data.thumbnail || ''
-                };
-
-                showStreamInfo();
-            } catch (error) {
-                showError(`Error: ${error.message}`);
-            }
-
-            hideLoading();
-        }
-
+        // ---------------------------------------------------------------------------
+        // Render the series episode list with checkboxes
+        // ---------------------------------------------------------------------------
         function renderSeries(episodes) {
             hideLoading();
+            selectedEpisodes = {};
+            resolvedStreams   = {};
+
             document.getElementById('inputSection').classList.add('hidden');
             document.getElementById('seriesSection').classList.remove('hidden');
-            
+
             const list = document.getElementById('episodesList');
             list.innerHTML = '';
-            
+
             episodes.forEach(ep => {
                 const div = document.createElement('div');
-                div.className = 'bg-white border rounded-xl p-4 flex flex-col sm:flex-row gap-4 hover:shadow-md transition';
-                
-                const imgUrl = ep.image_url || 'https://via.placeholder.com/640x360?text=No+Image';
-                
+                div.id        = `card-${ep.id}`;
+                div.className = 'episode-card bg-white border-2 border-gray-200 rounded-xl p-4 flex flex-col sm:flex-row gap-4';
+                div.setAttribute('data-pid', ep.id);
+                div.onclick = () => toggleEpisode(ep.id);
+
+                const imgUrl = ep.image_url || '';
+
                 div.innerHTML = `
-                    <img src="${imgUrl}" class="w-full sm:w-40 sm:h-24 object-cover rounded-lg flex-shrink-0" alt="Thumbnail" />
-                    <div class="flex-1 min-w-0">
-                        <h4 class="font-bold text-gray-800 truncate">${ep.title || 'Unknown Title'}</h4>
-                        <p class="text-sm font-medium text-blue-600 truncate mb-1">${ep.subtitle || 'Unknown Subtitle'}</p>
-                        <p class="text-sm text-gray-500 line-clamp-2">${ep.synopsis || ''}</p>
+                    <div class="flex items-start gap-3 flex-1 min-w-0">
+                        <!-- Checkbox -->
+                        <div class="flex-shrink-0 mt-1">
+                            <div id="check-${ep.id}" class="w-5 h-5 rounded border-2 border-gray-300 flex items-center justify-center transition-colors">
+                            </div>
+                        </div>
+                        <!-- Thumbnail -->
+                        ${imgUrl ? `<img src="${imgUrl}" class="w-28 h-16 object-cover rounded-lg flex-shrink-0 hidden sm:block" alt="" />` : ''}
+                        <!-- Text -->
+                        <div class="flex-1 min-w-0">
+                            <h4 class="font-bold text-gray-800 truncate">${ep.title || 'Unknown Title'}</h4>
+                            <p class="text-sm font-medium text-blue-600 truncate mb-1">${ep.subtitle || ''}</p>
+                            <p class="text-sm text-gray-500 line-clamp-2">${ep.synopsis || ''}</p>
+                        </div>
                     </div>
-                    <div class="flex items-center justify-end sm:justify-center mt-2 sm:mt-0">
-                        <button onclick="processEpisode('${ep.id}')" class="px-5 py-2.5 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition font-semibold whitespace-nowrap shadow-sm">
-                            Select
-                        </button>
-                    </div>
+                    <!-- Status badge (shown during/after preflight) -->
+                    <div id="badge-${ep.id}" class="flex items-center justify-end sm:justify-center flex-shrink-0"></div>
                 `;
                 list.appendChild(div);
             });
+
+            updateSelectionCount();
+            updateSelectAllButton();
         }
 
-        // Start download
+        // Toggle a single episode checkbox
+        function toggleEpisode(pid) {
+            // Ignore clicks on unavailable cards
+            const card = document.getElementById(`card-${pid}`);
+            if (card && card.classList.contains('episode-unavailable')) return;
+
+            const ep = seriesEpisodes.find(e => e.id === pid);
+            if (!ep) return;
+
+            if (selectedEpisodes[pid]) {
+                delete selectedEpisodes[pid];
+            } else {
+                selectedEpisodes[pid] = ep;
+            }
+
+            refreshCardStyle(pid);
+            updateSelectionCount();
+            updateSelectAllButton();
+        }
+
+        // Refresh the visual state of a single card
+        function refreshCardStyle(pid) {
+            const card  = document.getElementById(`card-${pid}`);
+            const check = document.getElementById(`check-${pid}`);
+            if (!card || !check) return;
+
+            const selected = !!selectedEpisodes[pid];
+            card.classList.toggle('episode-selected', selected);
+
+            if (selected) {
+                check.className = 'w-5 h-5 rounded border-2 border-blue-500 bg-blue-500 flex items-center justify-center transition-colors';
+                check.innerHTML = `<svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                </svg>`;
+            } else {
+                check.className = 'w-5 h-5 rounded border-2 border-gray-300 flex items-center justify-center transition-colors';
+                check.innerHTML = '';
+            }
+        }
+
+        // Select All / Deselect All toggle
+        function toggleSelectAll() {
+            const availableEpisodes = seriesEpisodes.filter(ep => {
+                const card = document.getElementById(`card-${ep.id}`);
+                return card && !card.classList.contains('episode-unavailable');
+            });
+
+            const allSelected = availableEpisodes.every(ep => !!selectedEpisodes[ep.id]);
+
+            if (allSelected) {
+                // Deselect all
+                availableEpisodes.forEach(ep => { delete selectedEpisodes[ep.id]; });
+            } else {
+                // Select all available
+                availableEpisodes.forEach(ep => { selectedEpisodes[ep.id] = ep; });
+            }
+
+            availableEpisodes.forEach(ep => refreshCardStyle(ep.id));
+            updateSelectionCount();
+            updateSelectAllButton();
+        }
+
+        function updateSelectAllButton() {
+            const btn = document.getElementById('selectAllBtn');
+            const availableEpisodes = seriesEpisodes.filter(ep => {
+                const card = document.getElementById(`card-${ep.id}`);
+                return card && !card.classList.contains('episode-unavailable');
+            });
+            const allSelected = availableEpisodes.length > 0 && availableEpisodes.every(ep => !!selectedEpisodes[ep.id]);
+            btn.textContent = allSelected ? 'Deselect All' : 'Select All';
+        }
+
+        function updateSelectionCount() {
+            const btn   = document.getElementById('downloadSelectedBtn');
+            const count = Object.keys(selectedEpisodes).length;
+            btn.textContent = `Download Selected (${count})`;
+            btn.disabled    = count === 0;
+        }
+
+        // ---------------------------------------------------------------------------
+        // Preflight: resolve all selected PIDs concurrently then kick off queue
+        // ---------------------------------------------------------------------------
+        async function startQueueDownload() {
+            const pids = Object.keys(selectedEpisodes);
+            if (pids.length === 0) return;
+
+            // Confirmation for multi-episode
+            if (pids.length > 1) {
+                try {
+                    await showConfirm({
+                        title:    `Download ${pids.length} episodes`,
+                        body:     `You're about to queue ${pids.length} episodes for download. This may take a while — streams will be checked first before anything is downloaded.`,
+                        okLabel:  'Yes, continue',
+                        variant:  'info',
+                    });
+                } catch {
+                    return; // user cancelled
+                }
+            }
+
+            // Lock the UI into "resolving" state
+            const downloadBtn = document.getElementById('downloadSelectedBtn');
+            const selectAllBtn = document.getElementById('selectAllBtn');
+            downloadBtn.disabled  = true;
+            downloadBtn.textContent = `Resolving streams\u2026 (0/${pids.length})`;
+            selectAllBtn.disabled = true;
+
+            // Disable all cards during preflight
+            seriesEpisodes.forEach(ep => {
+                const card = document.getElementById(`card-${ep.id}`);
+                if (card) card.style.pointerEvents = 'none';
+            });
+
+            // Resolve all PIDs concurrently
+            resolvedStreams = {};
+            let resolvedCount = 0;
+
+            await Promise.all(pids.map(async (pid) => {
+                const badge = document.getElementById(`badge-${pid}`);
+                try {
+                    const formData = new FormData();
+                    formData.append('input', pid);
+                    const response = await fetch('/process', { method: 'POST', body: formData });
+                    const data = await response.json();
+
+                    if (data.error) throw new Error(data.error);
+
+                    resolvedStreams[pid] = {
+                        pid,
+                        url:          data.url,
+                        audioUrl:     data.audio_url   || '',
+                        quality:      data.quality      || '',
+                        format:       data.format       || '',
+                        bitrate:      data.bitrate       || 0,
+                        showName:     data.show_name    || selectedEpisodes[pid]?.title || '',
+                        episodeTitle: data.episode_title || selectedEpisodes[pid]?.subtitle || '',
+                        thumbnail:    data.thumbnail    || ''
+                    };
+
+                    // Green tick badge
+                    if (badge) badge.innerHTML = `
+                        <span class="flex items-center gap-1 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            Ready
+                        </span>`;
+                } catch (err) {
+                    resolvedStreams[pid] = { error: err.message };
+
+                    // Red unavailable badge + grey card
+                    const card = document.getElementById(`card-${pid}`);
+                    if (card) card.classList.add('episode-unavailable');
+                    if (badge) badge.innerHTML = `
+                        <span class="flex items-center gap-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                            Unavailable
+                        </span>`;
+
+                    // Remove from selection
+                    delete selectedEpisodes[pid];
+                }
+
+                resolvedCount++;
+                const remaining = pids.length - resolvedCount;
+                downloadBtn.textContent = remaining > 0
+                    ? `Resolving streams\u2026 (${resolvedCount}/${pids.length})`
+                    : `Resolving streams\u2026`;
+            }));
+
+            // Re-enable card clicks (except unavailable ones)
+            seriesEpisodes.forEach(ep => {
+                const card = document.getElementById(`card-${ep.id}`);
+                if (card && !card.classList.contains('episode-unavailable')) {
+                    card.style.pointerEvents = '';
+                }
+            });
+            selectAllBtn.disabled = false;
+
+            // Build the download queue from successfully resolved, still-selected episodes
+            episodeQueue = pids
+                .filter(pid => resolvedStreams[pid] && !resolvedStreams[pid].error && selectedEpisodes[pid])
+                .map(pid => resolvedStreams[pid]);
+
+            if (episodeQueue.length === 0) {
+                // All failed — put the UI back so the user can try again
+                updateSelectionCount();
+                updateSelectAllButton();
+                return;
+            }
+
+            const failedCount = pids.length - episodeQueue.length;
+            if (failedCount > 0) {
+                // Some failed: show updated button count and let user confirm or Back out
+                updateSelectionCount();
+                updateSelectAllButton();
+                downloadBtn.textContent = `Download ${episodeQueue.length} available`;
+                downloadBtn.disabled    = false;
+                downloadBtn.onclick     = confirmAndDownloadQueue;
+                return;
+            }
+
+            // All resolved OK — go straight to download
+            beginQueueDownload();
+        }
+
+        function confirmAndDownloadQueue() {
+            // Re-attach normal handler for future calls
+            document.getElementById('downloadSelectedBtn').onclick = startQueueDownload;
+            beginQueueDownload();
+        }
+
+        function beginQueueDownload() {
+            isQueueMode  = true;
+            queueResults = [];
+            queueIndex   = 0;
+            downloadNextInQueue();
+        }
+
+        // ---------------------------------------------------------------------------
+        // Queue download loop
+        // ---------------------------------------------------------------------------
+        async function downloadNextInQueue() {
+            if (queueIndex >= episodeQueue.length) {
+                showSummary();
+                return;
+            }
+
+            const episode = episodeQueue[queueIndex];
+            currentPID = episode.pid;
+
+            // Show/reset progress section
+            showProgress();
+
+            // Update overall queue bar (only visible for multi-episode)
+            const total = episodeQueue.length;
+            if (total > 1) {
+                document.getElementById('queueProgressSection').classList.remove('hidden');
+                document.getElementById('queueProgressLabel').textContent  = `Episode ${queueIndex + 1} of ${total}`;
+                document.getElementById('queueProgressCount').textContent  = `${queueIndex} completed`;
+                const pct = (queueIndex / total) * 100;
+                document.getElementById('queueProgressBar').style.width   = `${pct}%`;
+                document.getElementById('queueCurrentEpisode').textContent =
+                    [episode.showName, episode.episodeTitle].filter(Boolean).join(' \u2013 ');
+            } else {
+                document.getElementById('queueProgressSection').classList.add('hidden');
+            }
+
+            // Kick off the download on the backend
+            try {
+                const formData = new FormData();
+                formData.append('pid',       episode.pid);
+                formData.append('url',       episode.url);
+                formData.append('audio_url', episode.audioUrl);
+                formData.append('quality',   episode.quality);
+
+                const response = await fetch('/download', { method: 'POST', body: formData });
+
+                if (!response.ok) {
+                    const errText = await response.text();
+                    advanceQueue(null, errText);
+                }
+                // Success: progress updates come through WebSocket; advanceQueue called on 'complete'/'error'/'cancelled'
+            } catch (err) {
+                advanceQueue(null, err.message);
+            }
+        }
+
+        // Called by the WebSocket handler when an episode finishes (or fails)
+        function advanceQueue(filename, errorMsg, fileSizeBytes) {
+            const episode = episodeQueue[queueIndex];
+            if (!episode) return;
+
+            queueResults.push({
+                pid:           episode.pid,
+                showName:      episode.showName,
+                episodeTitle:  episode.episodeTitle,
+                filename:      filename || null,
+                fileSizeBytes: fileSizeBytes || 0,
+                status:        errorMsg ? 'error' : 'success',
+                error:         errorMsg || null
+            });
+
+            queueIndex++;
+
+            if (queueIndex < episodeQueue.length) {
+                downloadNextInQueue();
+            } else {
+                showSummary();
+            }
+        }
+
+        // ---------------------------------------------------------------------------
+        // Single-episode download (confirmation-card path, no queue)
+        // ---------------------------------------------------------------------------
         async function startDownload() {
             if (!currentStreamData) return;
 
+            isQueueMode  = false;
+            episodeQueue = [currentStreamData];
+            queueResults = [];
+            queueIndex   = 0;
+
             try {
                 const formData = new FormData();
-                formData.append('pid', currentStreamData.pid);
-                formData.append('url', currentStreamData.url);
+                formData.append('pid',       currentStreamData.pid);
+                formData.append('url',       currentStreamData.url);
                 formData.append('audio_url', currentStreamData.audioUrl);
-                formData.append('quality', currentStreamData.quality);
+                formData.append('quality',   currentStreamData.quality);
 
-                const response = await fetch('/download', {
-                    method: 'POST',
-                    body: formData
-                });
+                const response = await fetch('/download', { method: 'POST', body: formData });
 
                 if (response.ok) {
                     showProgress();
@@ -441,28 +840,36 @@
             }
         }
 
+        // ---------------------------------------------------------------------------
         // Cancel download
+        // ---------------------------------------------------------------------------
         async function cancelDownload() {
             if (!currentPID) return;
 
-            if (confirm('Are you sure you want to cancel this download?')) {
-                try {
-                    const formData = new FormData();
-                    formData.append('pid', currentPID);
+            try {
+                await showConfirm({
+                    title:    'Cancel download?',
+                    body:     'This will stop the current download. Any partial files will be cleaned up.',
+                    okLabel:  'Yes, cancel',
+                    variant:  'danger',
+                });
+            } catch {
+                return; // user dismissed
+            }
 
-                    await fetch('/cancel', {
-                        method: 'POST',
-                        body: formData
-                    });
-
-                    addStatusMessage('Cancelling download...');
-                } catch (error) {
-                    console.error('Failed to cancel:', error);
-                }
+            try {
+                const formData = new FormData();
+                formData.append('pid', currentPID);
+                await fetch('/cancel', { method: 'POST', body: formData });
+                addStatusMessage('Cancelling download...');
+            } catch (error) {
+                console.error('Failed to cancel:', error);
             }
         }
 
-        // Handle WebSocket progress messages
+        // ---------------------------------------------------------------------------
+        // WebSocket message handler
+        // ---------------------------------------------------------------------------
         function handleProgressMessage(msg) {
             console.log('Progress message:', msg);
 
@@ -478,49 +885,128 @@
             } else if (msg.type === 'status') {
                 addStatusMessage(msg.message);
             } else if (msg.type === 'complete') {
-                showComplete(msg.filename);
+                if (isQueueMode || episodeQueue.length > 0) {
+                    advanceQueue(msg.filename, null, msg.file_size_bytes);
+                } else {
+                    // Direct single-episode path (confirmation card)
+                    queueResults = [{
+                        pid:           currentPID,
+                        showName:      currentStreamData?.showName     || '',
+                        episodeTitle:  currentStreamData?.episodeTitle || '',
+                        filename:      msg.filename,
+                        fileSizeBytes: msg.file_size_bytes || 0,
+                        status:        'success',
+                        error:         null
+                    }];
+                    showSummary();
+                }
             } else if (msg.type === 'error') {
-                showError(msg.message);
+                if (isQueueMode || episodeQueue.length > 0) {
+                    advanceQueue(null, msg.message, 0);
+                } else {
+                    showError(msg.message);
+                }
             } else if (msg.type === 'cancelled') {
-                showError('Download cancelled');
+                if (isQueueMode || episodeQueue.length > 0) {
+                    advanceQueue(null, 'Cancelled', 0);
+                } else {
+                    showError('Download cancelled');
+                }
             }
         }
 
-        // Update metadata display
+        // ---------------------------------------------------------------------------
+        // Summary screen
+        // ---------------------------------------------------------------------------
+        function formatFileSize(bytes) {
+            if (!bytes || bytes === 0) return '';
+            if (bytes >= 1024 * 1024 * 1024) return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+            if (bytes >= 1024 * 1024)        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            return (bytes / 1024).toFixed(0) + ' KB';
+        }
+
+        function showSummary() {
+            const successCount = queueResults.filter(r => r.status === 'success').length;
+            const total        = queueResults.length;
+
+            // Title
+            document.getElementById('summaryTitle').textContent =
+                total === 1
+                    ? (successCount === 1 ? 'Download Complete!' : 'Download Failed')
+                    : `${successCount} of ${total} episodes downloaded`;
+
+            // Build result rows
+            const list = document.getElementById('summaryList');
+            list.innerHTML = '';
+
+            queueResults.forEach(r => {
+                const row = document.createElement('div');
+                row.className = 'flex items-start gap-3 p-3 rounded-lg ' +
+                    (r.status === 'success' ? 'bg-green-50 border border-green-100' : 'bg-red-50 border border-red-100');
+
+                const icon = r.status === 'success'
+                    ? `<svg class="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                       </svg>`
+                    : `<svg class="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                       </svg>`;
+
+                const label = [r.showName, r.episodeTitle].filter(Boolean).join(' \u2013 ') || r.pid;
+                const sizeStr = formatFileSize(r.fileSizeBytes);
+                const detail = r.status === 'success'
+                    ? `<div class="flex items-center gap-2 flex-wrap mt-0.5">
+                           <span class="text-xs text-green-700 font-mono break-all">${r.filename || ''}</span>
+                           ${sizeStr ? `<span class="text-xs text-green-600 font-semibold whitespace-nowrap">${sizeStr}</span>` : ''}
+                       </div>`
+                    : `<span class="text-xs text-red-600">${r.error || 'Unknown error'}</span>`;
+
+                row.innerHTML = `
+                    ${icon}
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium ${r.status === 'success' ? 'text-green-800' : 'text-red-800'} truncate">${label}</p>
+                        ${detail}
+                    </div>`;
+
+                list.appendChild(row);
+            });
+
+            // Show section
+            document.getElementById('progressSection').classList.add('hidden');
+            document.getElementById('streamInfo').classList.add('hidden');
+            document.getElementById('summarySection').classList.remove('hidden');
+        }
+
+        // ---------------------------------------------------------------------------
+        // Update metadata display (from WebSocket 'started' message)
+        // ---------------------------------------------------------------------------
         function updateMetadata(msg) {
-            if (msg.thumbnail) {
-                document.getElementById('thumbnail').src = msg.thumbnail;
-            }
-            if (msg.show_name) {
-                document.getElementById('showName').textContent = msg.show_name;
-            }
-            if (msg.episode_title) {
-                document.getElementById('episodeTitle').textContent = msg.episode_title;
-            }
-            if (msg.quality) {
-                document.getElementById('quality').textContent = msg.quality;
-            }
+            if (msg.thumbnail) document.getElementById('thumbnail').src = msg.thumbnail;
+            if (msg.show_name) document.getElementById('showName').textContent = msg.show_name;
+            if (msg.episode_title) document.getElementById('episodeTitle').textContent = msg.episode_title;
+            if (msg.quality) document.getElementById('quality').textContent = msg.quality;
         }
 
-        // Update progress bars
+        // ---------------------------------------------------------------------------
+        // Progress bar helpers
+        // ---------------------------------------------------------------------------
         function updateAudioProgress(percent, current, total) {
-            document.getElementById('audioBar').style.width = `${percent}%`;
-            document.getElementById('audioProgress').textContent = `${percent.toFixed(1)}%`;
-            document.getElementById('audioSegments').textContent = `${current}/${total} segments`;
+            document.getElementById('audioBar').style.width       = `${percent}%`;
+            document.getElementById('audioProgress').textContent  = `${percent.toFixed(1)}%`;
+            document.getElementById('audioSegments').textContent  = `${current}/${total} segments`;
         }
 
         function updateVideoProgress(percent, current, total) {
-            document.getElementById('videoBar').style.width = `${percent}%`;
-            document.getElementById('videoProgress').textContent = `${percent.toFixed(1)}%`;
-            document.getElementById('videoSegments').textContent = `${current}/${total} segments`;
+            document.getElementById('videoBar').style.width       = `${percent}%`;
+            document.getElementById('videoProgress').textContent  = `${percent.toFixed(1)}%`;
+            document.getElementById('videoSegments').textContent  = `${current}/${total} segments`;
         }
 
-        // Update step indicator
         function updateStep(step, name) {
             for (let i = 1; i <= 3; i++) {
                 const stepEl = document.getElementById(`step${i}`);
                 const circle = stepEl.querySelector('div');
-                
+
                 if (i < step) {
                     circle.className = 'w-10 h-10 mx-auto rounded-full bg-green-500 flex items-center justify-center font-bold text-white mb-2';
                     circle.innerHTML = '✓';
@@ -536,7 +1022,6 @@
             document.getElementById('cancelBtn').style.display = step === 1 ? 'block' : 'none';
         }
 
-        // Add status message
         function addStatusMessage(message) {
             const container = document.getElementById('statusMessages');
             const p = document.createElement('p');
@@ -545,12 +1030,22 @@
             container.scrollTop = container.scrollHeight;
         }
 
+        // ---------------------------------------------------------------------------
         // UI state management
+        // ---------------------------------------------------------------------------
+        const ALL_SECTIONS = [
+            'loadingState', 'seriesSection', 'streamInfo',
+            'progressSection', 'summarySection', 'errorSection'
+        ];
+
+        function hideAllSections() {
+            ALL_SECTIONS.forEach(id => document.getElementById(id).classList.add('hidden'));
+        }
+
         function showLoading() {
             document.getElementById('inputSection').classList.add('hidden');
+            hideAllSections();
             document.getElementById('loadingState').classList.remove('hidden');
-            document.getElementById('streamInfo').classList.add('hidden');
-            document.getElementById('seriesSection').classList.add('hidden');
         }
 
         function hideLoading() {
@@ -558,15 +1053,11 @@
         }
 
         function showStreamInfo() {
+            hideAllSections();
             document.getElementById('inputSection').classList.add('hidden');
-            document.getElementById('seriesSection').classList.add('hidden');
             document.getElementById('streamInfo').classList.remove('hidden');
-            document.getElementById('progressSection').classList.add('hidden');
-            document.getElementById('completeSection').classList.add('hidden');
-            document.getElementById('errorSection').classList.add('hidden');
-            
+
             if (currentStreamData) {
-                // Update thumbnail if available
                 const thumbnailEl = document.getElementById('thumbnail');
                 if (currentStreamData.thumbnail) {
                     thumbnailEl.src = currentStreamData.thumbnail;
@@ -574,44 +1065,33 @@
                 } else {
                     thumbnailEl.classList.add('hidden');
                 }
-                
-                // Update metadata
-                document.getElementById('showName').textContent = currentStreamData.showName || 'Unknown Show';
+                document.getElementById('showName').textContent     = currentStreamData.showName     || 'Unknown Show';
                 document.getElementById('episodeTitle').textContent = currentStreamData.episodeTitle || 'Episode';
-                document.getElementById('quality').textContent = currentStreamData.quality || 'Unknown quality';
-                document.getElementById('format').textContent = currentStreamData.format || 'Unknown format';
+                document.getElementById('quality').textContent      = currentStreamData.quality      || 'Unknown quality';
+                document.getElementById('format').textContent       = currentStreamData.format       || 'Unknown format';
             }
         }
 
         function showProgress() {
+            hideAllSections();
             document.getElementById('inputSection').classList.add('hidden');
-            document.getElementById('seriesSection').classList.add('hidden');
-            document.getElementById('streamInfo').classList.add('hidden');
             document.getElementById('progressSection').classList.remove('hidden');
-            document.getElementById('completeSection').classList.add('hidden');
-            document.getElementById('errorSection').classList.add('hidden');
-            
-            // Reset progress
+
+            // Reset per-episode progress UI
             updateStep(1, 'Downloading');
             updateAudioProgress(0, 0, 0);
             updateVideoProgress(0, 0, 0);
             document.getElementById('statusMessages').innerHTML = '<p>Downloading...</p>';
-        }
-
-        function showComplete(filename) {
-            document.getElementById('progressSection').classList.add('hidden');
-            document.getElementById('completeSection').classList.remove('hidden');
-            document.getElementById('completeFilename').textContent = filename;
+            document.getElementById('cancelBtn').style.display = 'block';
         }
 
         function showError(message) {
+            hideAllSections();
             document.getElementById('inputSection').classList.remove('hidden');
             document.getElementById('inputError').textContent = message;
             document.getElementById('inputError').classList.remove('hidden');
             document.getElementById('errorSection').classList.remove('hidden');
             document.getElementById('errorMessage').textContent = message;
-            document.getElementById('streamInfo').classList.add('hidden');
-            document.getElementById('progressSection').classList.add('hidden');
         }
 
         function hideError() {
@@ -621,26 +1101,108 @@
 
         function resetForm() {
             document.getElementById('input').value = '';
-            currentPID = null;
+
+            // Reset state
+            currentPID        = null;
             currentStreamData = null;
+            seriesEpisodes    = [];
+            selectedEpisodes  = {};
+            resolvedStreams    = {};
+            episodeQueue      = [];
+            queueResults      = [];
+            queueIndex        = 0;
+            isQueueMode       = false;
+
+            // Reset Download Selected button handler in case it was swapped
+            const btn = document.getElementById('downloadSelectedBtn');
+            btn.onclick = startQueueDownload;
+
+            hideAllSections();
             document.getElementById('inputSection').classList.remove('hidden');
-            document.getElementById('seriesSection').classList.add('hidden');
-            document.getElementById('streamInfo').classList.add('hidden');
-            document.getElementById('progressSection').classList.add('hidden');
-            document.getElementById('completeSection').classList.add('hidden');
-            document.getElementById('errorSection').classList.add('hidden');
             hideError();
         }
 
-        // Allow Enter key to submit
+        // ---------------------------------------------------------------------------
+        // Confirmation modal
+        // ---------------------------------------------------------------------------
+        let _confirmResolve = null;
+        let _confirmReject  = null;
+
+        // Returns a Promise that resolves (true) on OK, rejects on Cancel.
+        // variant: 'info' (blue, default) | 'warning' (amber) | 'danger' (red)
+        function showConfirm({ title, body, okLabel = 'Confirm', cancelLabel = 'Cancel', variant = 'info' }) {
+            return new Promise((resolve, reject) => {
+                _confirmResolve = resolve;
+                _confirmReject  = reject;
+
+                document.getElementById('confirmModalTitle').textContent  = title;
+                document.getElementById('confirmModalBody').textContent   = body;
+                document.getElementById('confirmModalCancel').textContent = cancelLabel;
+                document.getElementById('confirmModalOk').textContent     = okLabel;
+
+                // Variant colours
+                const variants = {
+                    info:    { icon: 'bg-blue-100',  iconColor: 'text-blue-600',  btn: 'bg-blue-600 hover:bg-blue-700'  },
+                    warning: { icon: 'bg-amber-100', iconColor: 'text-amber-600', btn: 'bg-amber-500 hover:bg-amber-600' },
+                    danger:  { icon: 'bg-red-100',   iconColor: 'text-red-600',   btn: 'bg-red-600 hover:bg-red-700'   },
+                };
+                const v = variants[variant] || variants.info;
+
+                const iconEl = document.getElementById('confirmModalIcon');
+                iconEl.className = `flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${v.icon}`;
+
+                const iconSvgs = {
+                    info: `<svg class="w-5 h-5 ${v.iconColor}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                           </svg>`,
+                    warning: `<svg class="w-5 h-5 ${v.iconColor}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                              </svg>`,
+                    danger: `<svg class="w-5 h-5 ${v.iconColor}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                             </svg>`,
+                };
+                iconEl.innerHTML = iconSvgs[variant] || iconSvgs.info;
+
+                const okBtn = document.getElementById('confirmModalOk');
+                okBtn.className = `px-5 py-2 rounded-lg text-white font-medium text-sm transition ${v.btn}`;
+
+                document.getElementById('confirmModalCancel').onclick = () => { hideConfirm(); reject(); };
+                okBtn.onclick = () => { hideConfirm(); resolve(true); };
+
+                const modal = document.getElementById('confirmModal');
+                modal.classList.remove('modal-hidden');
+                modal.classList.add('modal-visible');
+            });
+        }
+
+        function hideConfirm() {
+            const modal = document.getElementById('confirmModal');
+            modal.classList.remove('modal-visible');
+            modal.classList.add('modal-hidden');
+            _confirmResolve = null;
+            _confirmReject  = null;
+        }
+
+        // ---------------------------------------------------------------------------
+        // Enter key on input
+        // ---------------------------------------------------------------------------
         document.getElementById('input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                processInput();
-            }
+            if (e.key === 'Enter') processInput();
         });
 
-        // Initialize WebSocket connection
+        // ---------------------------------------------------------------------------
+        // Boot
+        // ---------------------------------------------------------------------------
         connectWebSocket();
+
+        // Close modal on backdrop click
+        document.getElementById('confirmModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('confirmModal')) {
+                hideConfirm();
+                if (_confirmReject) _confirmReject();
+            }
+        });
     </script>
 </body>
 </html>
