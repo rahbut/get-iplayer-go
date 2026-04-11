@@ -27,7 +27,7 @@ echo ""
 echo -e "${GREEN}[1/2] Building Docker image locally...${NC}"
 
 BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-VERSION="v$(date -u +"%Y.%m.%d")"
+VERSION="v$(date -u +"%Y.%m.%d")-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)"
 
 docker build \
   -f "${SCRIPT_DIR}/Dockerfile" \

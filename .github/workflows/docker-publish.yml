@@ -26,6 +26,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Generate version
+        id: version
+        run: echo "value=v$(date -u +'%Y.%m.%d')-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -45,4 +49,4 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             BUILD_TIME=${{ github.event.head_commit.timestamp }}
-            VERSION=v${{ github.run_id }}
+            VERSION=${{ steps.version.outputs.value }}
