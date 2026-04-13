@@ -40,7 +40,7 @@ RUN set -e; \
         --enable-ffmpeg \
         --enable-ffprobe \
         --enable-demuxer=mpegts,mov,image2 \
-        --enable-muxer=mov,image2 \
+        --enable-muxer=mov,mp4,image2 \
         --enable-protocol=file \
         --enable-decoder=mjpeg \
         --enable-encoder=mjpeg \
