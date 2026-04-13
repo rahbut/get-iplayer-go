@@ -20,25 +20,34 @@ fi
 # Configuration — override REGISTRY_IMAGE in your environment or .env
 REGISTRY_IMAGE="${REGISTRY_IMAGE:-get-iplayer-go:latest}"
 
+# Platforms to build for
+PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
+
 echo -e "${BLUE}Deploying get-iplayer-go to Docker Registry${NC}"
 echo ""
 
+# Ensure a buildx builder with multi-arch support is available
+if ! docker buildx inspect multiarch-builder &>/dev/null; then
+  echo -e "${GREEN}[setup] Creating multi-arch buildx builder...${NC}"
+  docker buildx create --name multiarch-builder --driver docker-container --use
+else
+  docker buildx use multiarch-builder
+fi
+
 # Step 1: Build the image locally
-echo -e "${GREEN}[1/2] Building Docker image locally...${NC}"
+echo -e "${GREEN}[1/2] Building Docker image for ${PLATFORMS}...${NC}"
 
 BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 VERSION="v$(date -u +"%Y.%m.%d")-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)"
 
-docker build \
+docker buildx build \
   -f "${SCRIPT_DIR}/Dockerfile" \
+  --platform "${PLATFORMS}" \
   --build-arg BUILD_TIME="${BUILD_TIME}" \
   --build-arg VERSION="${VERSION}" \
   -t "${REGISTRY_IMAGE}" \
+  --push \
   "${REPO_ROOT}"
-
-# Step 2: Push the image to the registry
-echo -e "${GREEN}[2/2] Pushing Docker image to registry...${NC}"
-docker push "${REGISTRY_IMAGE}"
 
 echo ""
 echo -e "${GREEN}Build and push complete!${NC}"
