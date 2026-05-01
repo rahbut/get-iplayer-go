@@ -871,7 +871,9 @@
         // WebSocket message handler
         // ---------------------------------------------------------------------------
         function handleProgressMessage(msg) {
-            console.log('Progress message:', msg);
+            if (msg.type === 'error') {
+                console.error('Progress error:', msg);
+            }
 
             if (msg.type === 'started') {
                 updateMetadata(msg);
