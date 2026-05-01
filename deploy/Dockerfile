@@ -45,7 +45,7 @@ RUN set -e; \
         --enable-decoder=mjpeg,mov_text \
         --enable-encoder=mjpeg,mov_text \
         --enable-parser=mjpeg \
-        --enable-decoder=h264,aac,mp3 \
+        --enable-decoder=h264,aac,mp3,subrip \
         --enable-bsf=aac_adtstoasc,h264_mp4toannexb"; \
     if [ "$TARGETARCH" = "arm64" ]; then \
         SYSROOT=/usr/aarch64-linux-gnu; \
