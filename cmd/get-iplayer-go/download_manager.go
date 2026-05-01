@@ -142,7 +142,7 @@ func (dm *DownloadManager) StartDownload(pid, videoURL, audioURL, subtitleURL st
 func (dm *DownloadManager) downloadWithProgress(ctx context.Context, pid, videoURL, audioURL, subtitleURL, filename string, metadata *ProgrammeMetadata, quality, thumbnail string) error {
 	tsFilename := filename + ".ts"
 	audioFilename := filename + ".m4a"
-	srtTempFilename := filename + ".srt.tmp"
+	srtTempFilename := strings.TrimSuffix(filename, ".mp4") + ".srt"
 
 	// Step 1: Download Audio and Video concurrently
 	BroadcastProgress(ProgressMessage{
@@ -354,18 +354,12 @@ func (dm *DownloadManager) downloadWithProgress(ctx context.Context, pid, videoU
 		PID:     pid,
 	})
 
-	// Rename the temp SRT to its final sidecar name alongside the MP4
 	if srtFilename != "" {
-		finalSRT := strings.TrimSuffix(filename, ".mp4") + ".srt"
-		if err := os.Rename(srtTempFilename, finalSRT); err != nil {
-			os.Remove(srtTempFilename)
-		} else {
-			BroadcastProgress(ProgressMessage{
-				Type:    "status",
-				Message: "✓ Subtitle sidecar saved",
-				PID:     pid,
-			})
-		}
+		BroadcastProgress(ProgressMessage{
+			Type:    "status",
+			Message: "✓ Subtitle sidecar saved",
+			PID:     pid,
+		})
 	} else if subtitleURL != "" && subtitleErr != nil {
 		BroadcastProgress(ProgressMessage{
 			Type:    "status",

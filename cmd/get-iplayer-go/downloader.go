@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -426,7 +427,7 @@ func muxStreams(tsFilename, audioFilename, srtFilename, outputFilename string) e
 		args = append(args, "-i", srtFilename)
 	}
 
-	args = append(args, "-c", "copy", "-map", "0:v", "-map", "1:a")
+	args = append(args, "-map", "0:v", "-c:v", "copy", "-map", "1:a", "-c:a", "copy")
 
 	if srtFilename != "" {
 		args = append(args, "-map", "2:s", "-c:s", "mov_text", "-metadata:s:s:0", "language=eng")
@@ -435,10 +436,15 @@ func muxStreams(tsFilename, audioFilename, srtFilename, outputFilename string) e
 	args = append(args, "-movflags", "+faststart", outputFilename)
 
 	cmdMux := exec.Command("ffmpeg", args...)
-	cmdMux.Stderr = os.Stderr
+	var stderrBuf bytes.Buffer
+	cmdMux.Stderr = &stderrBuf
 
 	fmt.Printf("  Remuxing file...\n")
 	if err := cmdMux.Run(); err != nil {
+		ffmpegErr := strings.TrimSpace(stderrBuf.String())
+		if ffmpegErr != "" {
+			return fmt.Errorf("mux failed: %v: %s", err, ffmpegErr)
+		}
 		return fmt.Errorf("mux failed: %v", err)
 	}
 
@@ -454,7 +460,7 @@ func DownloadStream(videoURL, audioURL, subtitleURL, outputFilename string, conc
 func downloadSequential(videoURL, audioURL, subtitleURL, outputFilename string, concurrentSegments int) error {
 	tsFilename := outputFilename + ".ts"
 	audioFilename := outputFilename + ".m4a"
-	srtTempFilename := outputFilename + ".srt.tmp"
+	srtTempFilename := strings.TrimSuffix(outputFilename, ".mp4") + ".srt"
 	expectedDuration := 59*time.Minute + 8*time.Second // ~59:08 for BBC content
 
 	// Download Audio, Video, and Subtitles concurrently
@@ -615,15 +621,8 @@ func downloadSequential(videoURL, audioURL, subtitleURL, outputFilename string, 
 
 	fmt.Println("  ✓ Mux complete!")
 
-	// Rename the temp SRT to its final sidecar name alongside the MP4
 	if srtFilename != "" {
-		finalSRT := strings.TrimSuffix(outputFilename, ".mp4") + ".srt"
-		if err := os.Rename(srtTempFilename, finalSRT); err != nil {
-			fmt.Printf("  Warning: Could not rename subtitle sidecar: %v\n", err)
-			os.Remove(srtTempFilename)
-		} else {
-			fmt.Printf("  ✓ Subtitle sidecar: %s\n", finalSRT)
-		}
+		fmt.Printf("  ✓ Subtitle sidecar: %s\n", srtTempFilename)
 	}
 
 	return nil
