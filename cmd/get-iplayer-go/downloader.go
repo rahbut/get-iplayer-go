@@ -413,13 +413,28 @@ func validateMediaDuration(file string, expectedDuration time.Duration, mediaTyp
 	return nil
 }
 
-// muxStreams combines video and audio into final MP4
-func muxStreams(tsFilename, audioFilename, outputFilename string) error {
-	// -movflags +faststart is good practice for web playback
-	// Use -loglevel error to suppress all output except errors
-	cmdMux := exec.Command("ffmpeg", "-y", "-loglevel", "error", "-i", tsFilename, "-i", audioFilename, "-c", "copy", "-map", "0:v", "-map", "1:a", "-movflags", "+faststart", outputFilename)
+// muxStreams combines video and audio (and optionally subtitles) into final MP4.
+// If srtFilename is non-empty the SRT is embedded as a mov_text subtitle track.
+func muxStreams(tsFilename, audioFilename, srtFilename, outputFilename string) error {
+	args := []string{
+		"-y", "-loglevel", "error",
+		"-i", tsFilename,
+		"-i", audioFilename,
+	}
 
-	// Capture stderr in case of errors
+	if srtFilename != "" {
+		args = append(args, "-i", srtFilename)
+	}
+
+	args = append(args, "-c", "copy", "-map", "0:v", "-map", "1:a")
+
+	if srtFilename != "" {
+		args = append(args, "-map", "2:s", "-c:s", "mov_text", "-metadata:s:s:0", "language=eng")
+	}
+
+	args = append(args, "-movflags", "+faststart", outputFilename)
+
+	cmdMux := exec.Command("ffmpeg", args...)
 	cmdMux.Stderr = os.Stderr
 
 	fmt.Printf("  Remuxing file...\n")
@@ -430,19 +445,19 @@ func muxStreams(tsFilename, audioFilename, outputFilename string) error {
 	return nil
 }
 
-// DownloadStream downloads video and audio, then muxes them.
-// Uses sequential mode (audio first, then video) like the Perl script for reliability.
-func DownloadStream(videoURL, audioURL, outputFilename string, concurrentSegments int) error {
-	return downloadSequential(videoURL, audioURL, outputFilename, concurrentSegments)
+// DownloadStream downloads video and audio (and subtitles if available), then muxes them.
+func DownloadStream(videoURL, audioURL, subtitleURL, outputFilename string, concurrentSegments int) error {
+	return downloadSequential(videoURL, audioURL, subtitleURL, outputFilename, concurrentSegments)
 }
 
-// downloadSequential downloads audio and video concurrently
-func downloadSequential(videoURL, audioURL, outputFilename string, concurrentSegments int) error {
+// downloadSequential downloads audio, video, and subtitles concurrently, then muxes everything.
+func downloadSequential(videoURL, audioURL, subtitleURL, outputFilename string, concurrentSegments int) error {
 	tsFilename := outputFilename + ".ts"
 	audioFilename := outputFilename + ".m4a"
+	srtTempFilename := outputFilename + ".srt.tmp"
 	expectedDuration := 59*time.Minute + 8*time.Second // ~59:08 for BBC content
 
-	// Download Audio and Video concurrently
+	// Download Audio, Video, and Subtitles concurrently
 	fmt.Println("\nStep 1/3: Downloading Audio and Video concurrently...")
 	if audioURL == "" {
 		fmt.Println("  (No separate audio URL provided, will extract from video URL)")
@@ -450,11 +465,11 @@ func downloadSequential(videoURL, audioURL, outputFilename string, concurrentSeg
 
 	// Create progress tracker for concurrent display
 	progress := newProgressTracker()
-	
+
 	// Create signal channels for bidirectional thread scaling
 	audioToVideo := make(chan int, 1)
 	videoToAudio := make(chan int, 1)
-	
+
 	// Cross-wire the signals so each listens to the other
 	progress.audioExtraWorkers = videoToAudio
 	progress.videoExtraWorkers = audioToVideo
@@ -464,7 +479,8 @@ func downloadSequential(videoURL, audioURL, outputFilename string, concurrentSeg
 		name string
 		err  error
 	}
-	results := make(chan downloadResult, 2)
+	// Buffer for audio, video, and subtitles
+	results := make(chan downloadResult, 3)
 
 	// Download audio in goroutine
 	go func() {
@@ -474,7 +490,6 @@ func downloadSequential(videoURL, audioURL, outputFilename string, concurrentSeg
 		case audioToVideo <- concurrentSegments:
 		default:
 		}
-		
 		if err != nil {
 			os.Remove(audioFilename) // Clean up partial file
 		}
@@ -489,21 +504,35 @@ func downloadSequential(videoURL, audioURL, outputFilename string, concurrentSeg
 		case videoToAudio <- concurrentSegments:
 		default:
 		}
-		
 		if err != nil {
 			os.Remove(tsFilename) // Clean up partial file
 		}
 		results <- downloadResult{name: "video", err: err}
 	}()
 
-	// Wait for both downloads to complete
-	var audioErr, videoErr error
-	for i := 0; i < 2; i++ {
+	// Download and convert subtitles concurrently — non-blocking on the critical path
+	if subtitleURL != "" {
+		go func() {
+			err := DownloadAndConvertSubtitles(subtitleURL, srtTempFilename)
+			results <- downloadResult{name: "subtitles", err: err}
+		}()
+	}
+
+	// Wait for audio and video (and subtitles if requested)
+	var audioErr, videoErr, subtitleErr error
+	expected := 2
+	if subtitleURL != "" {
+		expected = 3
+	}
+	for i := 0; i < expected; i++ {
 		result := <-results
-		if result.name == "audio" {
+		switch result.name {
+		case "audio":
 			audioErr = result.err
-		} else {
+		case "video":
 			videoErr = result.err
+		case "subtitles":
+			subtitleErr = result.err
 		}
 	}
 
@@ -515,16 +544,25 @@ func downloadSequential(videoURL, audioURL, outputFilename string, concurrentSeg
 	if videoErr == nil {
 		fmt.Println("  [Video] Download Complete!")
 	}
+	if subtitleURL != "" {
+		if subtitleErr == nil {
+			fmt.Println("  [Subs]  Download Complete!")
+		} else {
+			fmt.Printf("  [Subs]  Warning: %v\n", subtitleErr)
+		}
+	}
 
-	// Check for errors
+	// Check for fatal errors (subtitles failure is non-fatal)
 	if audioErr != nil {
 		os.Remove(audioFilename)
 		os.Remove(tsFilename)
+		os.Remove(srtTempFilename)
 		return fmt.Errorf("audio download failed: %v", audioErr)
 	}
 	if videoErr != nil {
 		os.Remove(audioFilename)
 		os.Remove(tsFilename)
+		os.Remove(srtTempFilename)
 		return fmt.Errorf("video download failed: %v", videoErr)
 	}
 
@@ -535,6 +573,7 @@ func downloadSequential(videoURL, audioURL, outputFilename string, concurrentSeg
 	if err := validateMediaDuration(audioFilename, expectedDuration, "audio"); err != nil {
 		os.Remove(audioFilename)
 		os.Remove(tsFilename)
+		os.Remove(srtTempFilename)
 		return fmt.Errorf("audio validation failed: %v", err)
 	}
 	fmt.Println("  ✓ Audio validated")
@@ -543,6 +582,7 @@ func downloadSequential(videoURL, audioURL, outputFilename string, concurrentSeg
 	if err := validateMediaDuration(tsFilename, expectedDuration, "video"); err != nil {
 		os.Remove(tsFilename)
 		os.Remove(audioFilename)
+		os.Remove(srtTempFilename)
 		return fmt.Errorf("video validation failed: %v", err)
 	}
 
@@ -550,13 +590,22 @@ func downloadSequential(videoURL, audioURL, outputFilename string, concurrentSeg
 	if err := validateDownloadedFiles(tsFilename, audioFilename, expectedDuration); err != nil {
 		os.Remove(tsFilename)
 		os.Remove(audioFilename)
+		os.Remove(srtTempFilename)
 		return fmt.Errorf("file size validation failed: %v", err)
 	}
 	fmt.Println("  ✓ Video validated")
 
-	// Step 3: Mux
+	// Step 3: Mux — embed subtitles in the same pass if the SRT is ready
 	fmt.Println("\nStep 3/3: Muxing to MP4...")
-	if err := muxStreams(tsFilename, audioFilename, outputFilename); err != nil {
+
+	// Determine whether we have a usable SRT to embed
+	srtFilename := ""
+	if subtitleURL != "" && subtitleErr == nil {
+		srtFilename = srtTempFilename
+	}
+
+	if err := muxStreams(tsFilename, audioFilename, srtFilename, outputFilename); err != nil {
+		os.Remove(srtTempFilename)
 		return err
 	}
 
@@ -565,5 +614,17 @@ func downloadSequential(videoURL, audioURL, outputFilename string, concurrentSeg
 	os.Remove(audioFilename)
 
 	fmt.Println("  ✓ Mux complete!")
+
+	// Rename the temp SRT to its final sidecar name alongside the MP4
+	if srtFilename != "" {
+		finalSRT := strings.TrimSuffix(outputFilename, ".mp4") + ".srt"
+		if err := os.Rename(srtTempFilename, finalSRT); err != nil {
+			fmt.Printf("  Warning: Could not rename subtitle sidecar: %v\n", err)
+			os.Remove(srtTempFilename)
+		} else {
+			fmt.Printf("  ✓ Subtitle sidecar: %s\n", finalSRT)
+		}
+	}
+
 	return nil
 }

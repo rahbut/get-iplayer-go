@@ -34,6 +34,7 @@ type MediaSelectorResponse struct {
 	XMLName xml.Name `xml:"mediaSelection"`
 	Media   []struct {
 		Kind       string `xml:"kind,attr"`
+		Type       string `xml:"type,attr"`
 		Bitrate    string `xml:"bitrate,attr"`
 		Width      string `xml:"width,attr"`
 		Height     string `xml:"height,attr"`
@@ -47,12 +48,13 @@ type MediaSelectorResponse struct {
 }
 
 type StreamInfo struct {
-	URL        string
-	AudioURL   string // separate audio stream if needed
-	Resolution string
-	Bitrate    int
-	Format     string // dash or hls
-	Metadata   *ProgrammeMetadata
+	URL         string
+	AudioURL    string // separate audio stream if needed
+	SubtitleURL string // TTML captions URL if available
+	Resolution  string
+	Bitrate     int
+	Format      string // dash or hls
+	Metadata    *ProgrammeMetadata
 }
 
 // ProgrammeMetadata contains BBC programme information for tagging
@@ -320,6 +322,7 @@ func FindStreams(pid string) ([]StreamInfo, error) {
 	type MediaSelectorResponseJSON struct {
 		Media []struct {
 			Kind       string      `json:"kind"`
+			Type       string      `json:"type"`
 			Bitrate    json.Number `json:"bitrate"` // Use Number to handle string or int
 			Width      json.Number `json:"width"`
 			Height     json.Number `json:"height"`
@@ -347,6 +350,7 @@ func FindStreams(pid string) ([]StreamInfo, error) {
 		for _, m := range msJSON.Media {
 			media := struct {
 				Kind       string `xml:"kind,attr"`
+				Type       string `xml:"type,attr"`
 				Bitrate    string `xml:"bitrate,attr"`
 				Width      string `xml:"width,attr"`
 				Height     string `xml:"height,attr"`
@@ -359,6 +363,7 @@ func FindStreams(pid string) ([]StreamInfo, error) {
 			}{}
 
 			media.Kind = m.Kind
+			media.Type = m.Type
 			media.Bitrate = m.Bitrate.String()
 			media.Width = m.Width.String()
 			media.Height = m.Height.String()
@@ -400,7 +405,26 @@ func FindStreams(pid string) ([]StreamInfo, error) {
 		Format  string
 	}
 
-	// 3. Find detailed streams - Two Pass Approach
+	// 3. Find detailed streams - Three Pass Approach
+	// Pass 0: Capture subtitle (captions) URL — take the first valid one found
+	var subtitleURL string
+	for _, media := range ms.Media {
+		if media.Kind == "captions" && media.Type == "application/ttaf+xml" {
+			for _, conn := range media.Connection {
+				if conn.Href != "" {
+					subtitleURL = conn.Href
+					break
+				}
+			}
+		}
+		if subtitleURL != "" {
+			break
+		}
+	}
+	if subtitleURL != "" {
+		fmt.Printf("Found subtitles\n")
+	}
+
 	// Pass 1: Collect all audio streams
 	for _, media := range ms.Media {
 		if media.Kind == "audio" {
@@ -460,11 +484,12 @@ func FindStreams(pid string) ([]StreamInfo, error) {
 			}
 
 			streams = append(streams, StreamInfo{
-				URL:        conn.Href,
-				AudioURL:   bestAudioURL, // Should now be populated correctly
-				Resolution: fmt.Sprintf("%dx%d", width, height),
-				Bitrate:    bitrate + maxAudioBitrate,
-				Format:     format,
+				URL:         conn.Href,
+				AudioURL:    bestAudioURL, // Should now be populated correctly
+				SubtitleURL: subtitleURL,
+				Resolution:  fmt.Sprintf("%dx%d", width, height),
+				Bitrate:     bitrate + maxAudioBitrate,
+				Format:      format,
 			})
 
 		}

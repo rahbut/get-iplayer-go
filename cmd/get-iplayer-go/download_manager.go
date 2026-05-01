@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -33,7 +34,7 @@ var GlobalDownloadManager = &DownloadManager{
 }
 
 // StartDownload initiates a new download with WebSocket progress updates
-func (dm *DownloadManager) StartDownload(pid, videoURL, audioURL string, metadata *ProgrammeMetadata, quality string) error {
+func (dm *DownloadManager) StartDownload(pid, videoURL, audioURL, subtitleURL string, metadata *ProgrammeMetadata, quality string) error {
 	dm.mu.Lock()
 	if status, exists := dm.downloads[pid]; exists && status.IsRunning {
 		dm.mu.Unlock()
@@ -97,7 +98,7 @@ func (dm *DownloadManager) StartDownload(pid, videoURL, audioURL string, metadat
 		}()
 
 		// Download with context for cancellation support
-		if err := dm.downloadWithProgress(ctx, pid, videoURL, audioURL, fullPath, metadata, quality, thumbnail); err != nil {
+		if err := dm.downloadWithProgress(ctx, pid, videoURL, audioURL, subtitleURL, fullPath, metadata, quality, thumbnail); err != nil {
 			dm.mu.Lock()
 			status.Error = err
 			dm.mu.Unlock()
@@ -138,9 +139,10 @@ func (dm *DownloadManager) StartDownload(pid, videoURL, audioURL string, metadat
 }
 
 // downloadWithProgress performs the actual download with WebSocket progress updates
-func (dm *DownloadManager) downloadWithProgress(ctx context.Context, pid, videoURL, audioURL, filename string, metadata *ProgrammeMetadata, quality, thumbnail string) error {
+func (dm *DownloadManager) downloadWithProgress(ctx context.Context, pid, videoURL, audioURL, subtitleURL, filename string, metadata *ProgrammeMetadata, quality, thumbnail string) error {
 	tsFilename := filename + ".ts"
 	audioFilename := filename + ".m4a"
+	srtTempFilename := filename + ".srt.tmp"
 
 	// Step 1: Download Audio and Video concurrently
 	BroadcastProgress(ProgressMessage{
@@ -158,7 +160,8 @@ func (dm *DownloadManager) downloadWithProgress(ctx context.Context, pid, videoU
 		name string
 		err  error
 	}
-	results := make(chan downloadResult, 2)
+	// Buffer for audio, video, and subtitles
+	results := make(chan downloadResult, 3)
 
 	// Progress trackers for audio and video
 	audioProgressFunc := func(percent float64, current, total int) {
@@ -222,33 +225,51 @@ func (dm *DownloadManager) downloadWithProgress(ctx context.Context, pid, videoU
 		results <- downloadResult{name: "video", err: err}
 	}()
 
-	// Wait for both downloads
-	var audioErr, videoErr error
-	for i := 0; i < 2; i++ {
+	// Download and convert subtitles concurrently — non-blocking on the critical path
+	if subtitleURL != "" {
+		go func() {
+			err := DownloadAndConvertSubtitles(subtitleURL, srtTempFilename)
+			results <- downloadResult{name: "subtitles", err: err}
+		}()
+	}
+
+	// Wait for audio, video (and subtitles if requested)
+	var audioErr, videoErr, subtitleErr error
+	expected := 2
+	if subtitleURL != "" {
+		expected = 3
+	}
+	for i := 0; i < expected; i++ {
 		result := <-results
 
 		// Check for cancellation
 		if ctx.Err() == context.Canceled {
 			os.Remove(audioFilename)
 			os.Remove(tsFilename)
+			os.Remove(srtTempFilename)
 			return ctx.Err()
 		}
 
-		if result.name == "audio" {
+		switch result.name {
+		case "audio":
 			audioErr = result.err
-		} else {
+		case "video":
 			videoErr = result.err
+		case "subtitles":
+			subtitleErr = result.err
 		}
 	}
 
 	if audioErr != nil {
 		os.Remove(audioFilename)
 		os.Remove(tsFilename)
+		os.Remove(srtTempFilename)
 		return fmt.Errorf("audio download failed: %v", audioErr)
 	}
 	if videoErr != nil {
 		os.Remove(audioFilename)
 		os.Remove(tsFilename)
+		os.Remove(srtTempFilename)
 		return fmt.Errorf("video download failed: %v", videoErr)
 	}
 
@@ -306,12 +327,20 @@ func (dm *DownloadManager) downloadWithProgress(ctx context.Context, pid, videoU
 	if ctx.Err() == context.Canceled {
 		os.Remove(audioFilename)
 		os.Remove(tsFilename)
+		os.Remove(srtTempFilename)
 		return ctx.Err()
 	}
 
-	if err := muxStreams(tsFilename, audioFilename, filename); err != nil {
+	// Use the SRT for embedding if the subtitle download succeeded
+	srtFilename := ""
+	if subtitleURL != "" && subtitleErr == nil {
+		srtFilename = srtTempFilename
+	}
+
+	if err := muxStreams(tsFilename, audioFilename, srtFilename, filename); err != nil {
 		os.Remove(audioFilename)
 		os.Remove(tsFilename)
+		os.Remove(srtTempFilename)
 		return fmt.Errorf("mux failed: %v", err)
 	}
 
@@ -324,6 +353,26 @@ func (dm *DownloadManager) downloadWithProgress(ctx context.Context, pid, videoU
 		Message: "✓ Mux complete",
 		PID:     pid,
 	})
+
+	// Rename the temp SRT to its final sidecar name alongside the MP4
+	if srtFilename != "" {
+		finalSRT := strings.TrimSuffix(filename, ".mp4") + ".srt"
+		if err := os.Rename(srtTempFilename, finalSRT); err != nil {
+			os.Remove(srtTempFilename)
+		} else {
+			BroadcastProgress(ProgressMessage{
+				Type:    "status",
+				Message: "✓ Subtitle sidecar saved",
+				PID:     pid,
+			})
+		}
+	} else if subtitleURL != "" && subtitleErr != nil {
+		BroadcastProgress(ProgressMessage{
+			Type:    "status",
+			Message: fmt.Sprintf("Warning: Subtitles unavailable: %v", subtitleErr),
+			PID:     pid,
+		})
+	}
 
 	// Add metadata tags if available
 	if metadata != nil {

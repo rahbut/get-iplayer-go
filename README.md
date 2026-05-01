@@ -4,9 +4,10 @@ A high-performance Go rewrite of [get_iplayer](https://github.com/get-iplayer/ge
 
 ## Features
 
-- **Parallel audio & video downloads** — both streams download concurrently, with workers automatically rebalancing when one stream finishes ahead of the other
+- **Parallel audio, video & subtitle downloads** — all three streams download concurrently so subtitles never delay the critical path
 - **Automatic 1080p enhancement** — injects a true 1080p representation into streams where BBC only advertises up to 720p, with fallback if unavailable
 - **Full metadata tagging** — embeds title, show, series/episode numbers, channel, genre, synopsis, broadcast date, and thumbnail artwork into the MP4
+- **Subtitles** — where available, BBC captions are downloaded and converted from TTML to SRT (with colour tags preserved); the SRT is both embedded in the MP4 as a `mov_text` track and saved as a sidecar `.srt` file alongside it
 - **Human-readable filenames** — e.g. `Show.Name.S01E01.mp4`, falling back to PID if metadata is incomplete
 - **Season/series downloads** — paste a BBC iPlayer series URL to browse all episodes; select one, several, or the entire season; streams are pre-checked concurrently before any download begins
 - **Web UI** — modern single-page interface with real-time progress, cancel support, and mobile-responsive design
@@ -75,6 +76,7 @@ Step 2/3: Validating downloads...
 
 Step 3/3: Muxing to MP4...
   ✓ Mux complete!
+  ✓ Subtitle sidecar: Example.Show.S01E01.srt
 
 Adding metadata tags...
 All done!
@@ -122,6 +124,7 @@ A typical one-hour BBC programme downloads in around 30–45 seconds on a good c
 | Binary | Requires Perl runtime | **Single binary** |
 | Metadata tagging | Optional flag | **Always on** |
 | Artwork | Not embedded | **Auto-embedded** |
+| Subtitles | Optional flag (`--subtitles`) | **Always on — embedded + sidecar SRT** |
 | Series numbers | May be incorrect | **Parsed from display titles** |
 | Output | Verbose | **Clean and minimal** |
 | Web UI | No | **Yes** |
@@ -183,6 +186,7 @@ get-iplayer-go/
 │       ├── stream_finder.go      # BBC API, stream discovery, 1080p synthesis
 │       ├── dash_downloader.go    # DASH/MPD parsing, concurrent segment downloads
 │       ├── downloader.go         # Download orchestration, validation, muxing
+│       ├── subtitle_downloader.go# TTML subtitle download and TTML→SRT conversion
 │       ├── download_manager.go   # Web UI download manager with WebSocket support
 │       ├── websocket_handler.go  # WebSocket connection management
 │       ├── progress.go           # ffmpeg output parsing, stall detection

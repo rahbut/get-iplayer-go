@@ -39,11 +39,11 @@ RUN set -e; \
         --disable-shared \
         --enable-ffmpeg \
         --enable-ffprobe \
-        --enable-demuxer=mpegts,mov,image2 \
+        --enable-demuxer=mpegts,mov,image2,srt \
         --enable-muxer=mov,mp4,image2 \
         --enable-protocol=file \
-        --enable-decoder=mjpeg \
-        --enable-encoder=mjpeg \
+        --enable-decoder=mjpeg,mov_text \
+        --enable-encoder=mjpeg,mov_text \
         --enable-parser=mjpeg \
         --enable-decoder=h264,aac,mp3 \
         --enable-bsf=aac_adtstoasc,h264_mp4toannexb"; \

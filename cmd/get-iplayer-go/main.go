@@ -106,7 +106,7 @@ func runCLI(input string) {
 
 	// Use 5 concurrent segments initially per stream (dynamically scales to 10)
 	const concurrentSegments = 5
-	if err := DownloadStream(bestStream.URL, bestStream.AudioURL, fullPath, concurrentSegments); err != nil {
+	if err := DownloadStream(bestStream.URL, bestStream.AudioURL, bestStream.SubtitleURL, fullPath, concurrentSegments); err != nil {
 		log.Fatalf("Download failed: %v", err)
 	}
 
@@ -308,7 +308,7 @@ func downloadHandler(w http.ResponseWriter, r *http.Request) {
 
 	bestStream := &streams[0]
 
-	if err := GlobalDownloadManager.StartDownload(pid, videoURL, audioURL, bestStream.Metadata, quality); err != nil {
+	if err := GlobalDownloadManager.StartDownload(pid, videoURL, audioURL, bestStream.SubtitleURL, bestStream.Metadata, quality); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to start download: %v", err), http.StatusInternalServerError)
 		return
 	}
