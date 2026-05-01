@@ -42,11 +42,11 @@ RUN set -e; \
         --enable-demuxer=mpegts,mov,image2,srt \
         --enable-muxer=mov,mp4,image2 \
         --enable-protocol=file \
-        --enable-decoder=mjpeg,mov_text \
-        --enable-encoder=mjpeg,mov_text \
+        --enable-decoder=mjpeg,movtext \
+        --enable-encoder=mjpeg,movtext \
         --enable-parser=mjpeg \
         --enable-decoder=h264,aac,mp3,subrip \
-        --enable-bsf=aac_adtstoasc,h264_mp4toannexb"; \
+        --enable-bsf=aac_adtstoasc,h264_mp4toannexb,text2movsub,mov2textsub"; \
     if [ "$TARGETARCH" = "arm64" ]; then \
         SYSROOT=/usr/aarch64-linux-gnu; \
         ./configure $COMMON_FLAGS \
