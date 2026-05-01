@@ -18,7 +18,7 @@
 *.temp
 
 # Build artifacts
-get-iplayer-go
+/get-iplayer-go
 *.exe
 
 # Log files
