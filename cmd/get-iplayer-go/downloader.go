@@ -448,6 +448,12 @@ func muxStreams(tsFilename, audioFilename, srtFilename, outputFilename string) e
 		return fmt.Errorf("mux failed: %v", err)
 	}
 
+	if srtFilename != "" {
+		if err := clearSubtitleDefaultFlag(outputFilename); err != nil {
+			fmt.Printf("  Warning: Could not clear subtitle default flag: %v\n", err)
+		}
+	}
+
 	return nil
 }
 
@@ -618,11 +624,12 @@ func downloadSequential(videoURL, audioURL, subtitleURL, outputFilename string, 
 	// Cleanup temp files after successful mux
 	os.Remove(tsFilename)
 	os.Remove(audioFilename)
+	os.Remove(srtTempFilename)
 
 	fmt.Println("  ✓ Mux complete!")
 
 	if srtFilename != "" {
-		fmt.Printf("  ✓ Subtitle sidecar: %s\n", srtTempFilename)
+		fmt.Println("  ✓ Subtitles embedded")
 	}
 
 	return nil

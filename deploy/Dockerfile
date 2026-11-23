@@ -1,7 +1,7 @@
 # Stage 1: Build minimal ffmpeg/ffprobe — always runs on the native builder (no QEMU)
-FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS ffmpeg-builder
+FROM --platform=$BUILDPLATFORM debian:trixie-slim AS ffmpeg-builder
 
-ARG FFMPEG_VERSION=8.1
+ARG FFMPEG_VERSION=9.1
 ARG TARGETARCH
 
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
@@ -64,7 +64,7 @@ RUN set -e; \
     && make install
 
 # Stage 2: Build the Go binary — also runs natively via Go's built-in cross-compilation
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 
 WORKDIR /build
 
@@ -82,7 +82,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
     -o get-iplayer-go ./cmd/get-iplayer-go/
 
 # Stage 3: Minimal runtime image
-FROM gcr.io/distroless/static-debian12
+FROM gcr.io/distroless/static-debian13
 
 COPY --from=ffmpeg-builder /ffmpeg-out/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --from=ffmpeg-builder /ffmpeg-out/bin/ffprobe /usr/local/bin/ffprobe

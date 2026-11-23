@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -398,4 +399,162 @@ func collapseSpaces(s string) string {
 	s = regexp.MustCompile(`^\s{2,}`).ReplaceAllString(s, " ")
 	s = regexp.MustCompile(`\s{2,}$`).ReplaceAllString(s, " ")
 	return s
+}
+
+type mp4Box struct {
+	boxType   string
+	dataStart int64
+	end       int64
+}
+
+// readMP4Boxes iterates the child ISO BMFF boxes within [start, end).
+func readMP4Boxes(rs io.ReadSeeker, start, end int64) ([]mp4Box, error) {
+	var boxes []mp4Box
+	var hdr [8]byte
+	var large [8]byte
+
+	for pos := start; pos+8 <= end; {
+		if _, err := rs.Seek(pos, io.SeekStart); err != nil {
+			return nil, err
+		}
+		if _, err := io.ReadFull(rs, hdr[:]); err != nil {
+			return nil, err
+		}
+
+		size32 := binary.BigEndian.Uint32(hdr[0:4])
+		boxType := string(hdr[4:8])
+		headerSize := int64(8)
+		var boxSize int64
+
+		switch size32 {
+		case 0:
+			boxSize = end - pos
+		case 1:
+			if pos+16 > end {
+				return boxes, nil
+			}
+			if _, err := io.ReadFull(rs, large[:]); err != nil {
+				return nil, err
+			}
+			boxSize = int64(binary.BigEndian.Uint64(large[:]))
+			headerSize = 16
+		default:
+			boxSize = int64(size32)
+		}
+
+		if boxSize < headerSize || pos+boxSize > end {
+			return nil, fmt.Errorf("invalid MP4 box %q size %d at offset %d", boxType, boxSize, pos)
+		}
+
+		boxes = append(boxes, mp4Box{
+			boxType:   boxType,
+			dataStart: pos + headerSize,
+			end:       pos + boxSize,
+		})
+		pos += boxSize
+	}
+
+	return boxes, nil
+}
+
+// clearSubtitleDefaultFlag clears the track_enabled bit (0x01) in the tkhd box
+// of any subtitle track in an MP4 file.
+//
+// FFmpeg's MP4 muxer (libavformat/movenc.c) unconditionally sets MOV_TRACK_ENABLED
+// on the first subtitle track for legacy QuickTime compatibility even when
+// "-disposition:s:0 0" is passed. Media servers like Jellyfin read that bit via
+// ffprobe as DISPOSITION:default=1 and auto-enable subtitles in Default mode.
+// Clearing bit 0 leaves the subtitle track embedded and selectable without
+// marking it as default.
+func clearSubtitleDefaultFlag(mp4Path string) error {
+	f, err := os.OpenFile(mp4Path, os.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("opening MP4 to clear subtitle default flag: %w", err)
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat MP4: %w", err)
+	}
+
+	topBoxes, err := readMP4Boxes(f, 0, info.Size())
+	if err != nil {
+		return err
+	}
+
+	for _, top := range topBoxes {
+		if top.boxType != "moov" {
+			continue
+		}
+		moovChildren, err := readMP4Boxes(f, top.dataStart, top.end)
+		if err != nil {
+			return err
+		}
+		for _, child := range moovChildren {
+			if child.boxType != "trak" {
+				continue
+			}
+			if err := clearTrackEnabledIfSubtitle(f, child.dataStart, child.end); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func clearTrackEnabledIfSubtitle(f *os.File, trakStart, trakEnd int64) error {
+	trakChildren, err := readMP4Boxes(f, trakStart, trakEnd)
+	if err != nil {
+		return err
+	}
+
+	var tkhdFlagsByteOffset int64 = -1
+	var handlerType string
+
+	for _, child := range trakChildren {
+		switch child.boxType {
+		case "tkhd":
+			// FullBox: 1 byte version + 3 bytes flags (big-endian); bit 0 is at offset +3.
+			if child.end-child.dataStart >= 4 {
+				tkhdFlagsByteOffset = child.dataStart + 3
+			}
+		case "mdia":
+			mdiaChildren, err := readMP4Boxes(f, child.dataStart, child.end)
+			if err != nil {
+				return err
+			}
+			for _, mchild := range mdiaChildren {
+				if mchild.boxType == "hdlr" && mchild.end-mchild.dataStart >= 12 {
+					// FullBox (4) + pre_defined (4) + handler_type (4)
+					var ht [4]byte
+					if _, err := f.ReadAt(ht[:], mchild.dataStart+8); err != nil {
+						return err
+					}
+					handlerType = string(ht[:])
+				}
+			}
+		}
+	}
+
+	if tkhdFlagsByteOffset < 0 {
+		return nil
+	}
+
+	switch handlerType {
+	case "sbtl", "subt", "text":
+		var b [1]byte
+		if _, err := f.ReadAt(b[:], tkhdFlagsByteOffset); err != nil {
+			return err
+		}
+		if b[0]&0x01 != 0 {
+			b[0] &^= 0x01
+			if _, err := f.WriteAt(b[:], tkhdFlagsByteOffset); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }

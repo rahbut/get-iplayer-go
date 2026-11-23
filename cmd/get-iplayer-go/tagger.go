@@ -200,6 +200,12 @@ func TagMP4File(filename string, metadata *ProgrammeMetadata, resolution string)
 		return fmt.Errorf("ffmpeg tagging failed: %v\nOutput: %s", err, string(output))
 	}
 
+	// FFmpeg's MP4 muxer re-sets the track_enabled (default) flag on subtitle
+	// tracks during stream copy; clear it again so subtitles aren't auto-enabled.
+	if err := clearSubtitleDefaultFlag(tempFile); err != nil {
+		fmt.Printf("  Warning: Could not clear subtitle default flag: %v\n", err)
+	}
+
 	// Replace original file with tagged version
 	if err := os.Remove(filename); err != nil {
 		return fmt.Errorf("failed to remove original file: %v", err)

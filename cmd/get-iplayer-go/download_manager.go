@@ -288,6 +288,7 @@ func (dm *DownloadManager) downloadWithProgress(ctx context.Context, pid, videoU
 	if ctx.Err() == context.Canceled {
 		os.Remove(audioFilename)
 		os.Remove(tsFilename)
+		os.Remove(srtTempFilename)
 		return ctx.Err()
 	}
 
@@ -296,6 +297,7 @@ func (dm *DownloadManager) downloadWithProgress(ctx context.Context, pid, videoU
 	if err != nil || audioInfo.Size() == 0 {
 		os.Remove(audioFilename)
 		os.Remove(tsFilename)
+		os.Remove(srtTempFilename)
 		return fmt.Errorf("audio file validation failed")
 	}
 
@@ -303,6 +305,7 @@ func (dm *DownloadManager) downloadWithProgress(ctx context.Context, pid, videoU
 	if err != nil || videoInfo.Size() == 0 {
 		os.Remove(audioFilename)
 		os.Remove(tsFilename)
+		os.Remove(srtTempFilename)
 		return fmt.Errorf("video file validation failed")
 	}
 
@@ -347,6 +350,7 @@ func (dm *DownloadManager) downloadWithProgress(ctx context.Context, pid, videoU
 	// Cleanup temp files
 	os.Remove(tsFilename)
 	os.Remove(audioFilename)
+	os.Remove(srtTempFilename)
 
 	BroadcastProgress(ProgressMessage{
 		Type:    "status",
@@ -357,7 +361,7 @@ func (dm *DownloadManager) downloadWithProgress(ctx context.Context, pid, videoU
 	if srtFilename != "" {
 		BroadcastProgress(ProgressMessage{
 			Type:    "status",
-			Message: "✓ Subtitle sidecar saved",
+			Message: "✓ Subtitles embedded",
 			PID:     pid,
 		})
 	} else if subtitleURL != "" && subtitleErr != nil {
