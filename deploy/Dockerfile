@@ -48,13 +48,11 @@ RUN set -e; \
         --enable-decoder=h264,aac,mp3,subrip \
         --enable-bsf=aac_adtstoasc,h264_mp4toannexb,text2movsub,mov2textsub"; \
     if [ "$TARGETARCH" = "arm64" ]; then \
-        SYSROOT=/usr/aarch64-linux-gnu; \
         ./configure $COMMON_FLAGS \
             --arch=aarch64 \
             --cross-prefix=aarch64-linux-gnu- \
             --target-os=linux \
-            --extra-cflags="--sysroot=${SYSROOT}" \
-            --extra-ldflags="--sysroot=${SYSROOT} -static"; \
+            --extra-ldflags="-static"; \
     else \
         ./configure $COMMON_FLAGS \
             --arch=x86_64 \
